@@ -15,6 +15,8 @@
       ar - hit test<br />(Chrome Android 81+)
     </div>
 
+    <img id="img" src="/flower.jpeg" alt="flower" style="display: none" />
+
     <!-- Import maps polyfill -->
     <!-- Remove this when import maps will be widely supported -->
     <script
@@ -54,7 +56,25 @@
       const MAX_ANCHORED_OBJECTS = 30;
       let anchoredObjects = [];
 
-      function init() {
+      // Image tracking cone
+      const radiusIT = 0.2;
+      const heightIT = 0.3;
+      const geometryIT = new THREE.ConeGeometry(radiusIT, heightIT, 32);
+      //by defualt the image will be rendered in the middle, so we need to push half of the height up to be exactly on top of the img
+      geometryIT.translate(0, heightIT / 2, 0);
+
+      const materialIT = new THREE.MeshNormalMaterial({
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide,
+      });
+
+      const meshIT = new THREE.Mesh(geometryIT, materialIT);
+      meshIT.matrixAutoUpdate = false; // important we have to set this to false because we'll update the position when we track an image
+      meshIT.visible = false;
+      scene.add(meshIT);
+
+      async function init() {
         container = document.createElement("div");
         document.body.appendChild(container);
 
@@ -81,9 +101,23 @@
 
         //
 
+        const img1 = document.getElementById("img");
+        const imgBitmap = await createImageBitmap(img1);
+
         document.body.appendChild(
           ARButton.createButton(renderer, {
-            requiredFeatures: ["hit-test", "anchors", "local"],
+            requiredFeatures: [
+              "hit-test",
+              "anchors",
+              "local",
+              "image-tracking",
+            ],
+            trackedImages: [
+              {
+                image: imgBitmap,
+                widthInMeters: 0.7,
+              },
+            ],
           })
         );
 
@@ -177,6 +211,31 @@
         if (frame) {
           const referenceSpace = renderer.xr.getReferenceSpace();
           const session = renderer.xr.getSession();
+
+          const imageTrackingResults = frame.getImageTrackingResults(); //checking if there are any images we track
+          //if we have more than one image the results are an array
+          for (const result of imageTrackingResults) {
+            // The result's index is the image's position in the trackedImages array specified at session creation
+            const imageIndex = result.index;
+
+            // Get the pose of the image relative to a reference space.
+            const referenceSpace = renderer.xr.getReferenceSpace();
+            const pose = frame.getPose(result.imageSpace, referenceSpace);
+
+            //checking the state of the tracking
+            const state = result.trackingState;
+            console.log(state);
+
+            if (state == "tracked") {
+              console.log("Image target has been found");
+              meshIT.visible = true;
+              // update the cone mesh when the image target is found
+              meshIT.matrix.fromArray(pose.transform.matrix);
+            } else if (state == "emulated") {
+              meshIT.visible = false;
+              console.log("Image target no longer seen");
+            }
+          }
 
           if (hitTestSourceRequested === false) {
             session

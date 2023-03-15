@@ -1,80 +1,12 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
   <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script
-      data-consolejs-channel="4694a637-44fe-f9c5-392f-d3056e52e885"
-      src="https://remotejs.com/agent/agent.js"
-    ></script>
-    <script
-      async
-      src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
-    ></script>
-
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.147.0/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.147.0/examples/jsm/",
-          "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.0/dist/mindar-image-three.prod.js"
-        }
-      }
-    </script>
-
-    <script type="module">
-      import * as THREE from "three";
-      import { MindARThree } from "mindar-image-three";
-      import { ARButton } from "three/addons/webxr/ARButton.js";
-
-      const mindarThree = new MindARThree({
-        container: document.querySelector("#container"),
-        imageTargetSrc: "./targets.mind",
-      });
-      const { renderer, scene, camera } = mindarThree;
-      renderer.xr.enabled = true;
-
-      const anchor = mindarThree.addAnchor(0);
-      const geometry = new THREE.PlaneGeometry(1, 0.55);
-      const material = new THREE.MeshBasicMaterial({
-        color: 0x00ffff,
-        transparent: true,
-        opacity: 0.5,
-      });
-      const plane = new THREE.Mesh(geometry, material);
-      anchor.group.add(plane);
-
-      document.body.appendChild(
-        ARButton.createButton(renderer, { requiredFeatures: ["anchors"] })
-      );
-
-      const start = async () => {
-        await mindarThree.start();
-        renderer.setAnimationLoop(() => {
-          renderer.render(scene, camera);
-        });
-      };
-
-      anchor.onTargetFound = (event) => {
-        console.log("target found");
-        const p = new THREE.Vector3();
-        const quaternion = new THREE.Quaternion();
-        anchor.group.getWorldPosition(p);
-        anchor.group.getWorldQuaternion(quaternion);
-        console.log(p);
-        console.log(quaternion);
-      };
-
-      const startButton = document.querySelector("#startButton");
-      startButton.addEventListener("click", () => {
-        start();
-      });
-      stopButton.addEventListener("click", () => {
-        mindarThree.stop();
-        mindarThree.renderer.setAnimationLoop(null);
-      });
-
-      console.log(renderer.xr);
-    </script>
-
+    <title>three.js ar - hit test</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
     <style>
       body {
         margin: 0;
@@ -94,10 +26,359 @@
     </style>
   </head>
   <body>
-    <div id="control">
-      <button id="startButton">Start</button>
-      <button id="stopButton">Stop</button>
-    </div>
+    <!-- Import maps polyfill -->
+    <!-- Remove this when import maps will be widely supported -->
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"
+    ></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.147.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.147.0/examples/jsm/",
+          "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.0/dist/mindar-image-three.prod.js"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { MindARThree } from "mindar-image-three";
+
+      const mindarThree = new MindARThree({
+        container: document.querySelector("#container"),
+        imageTargetSrc: "./targets.mind",
+      });
+      const { renderer, scene, camera } = mindarThree;
+
+      let container;
+      let controller;
+
+      let reticle;
+
+      let hitTestSource = null;
+      let hitTestSourceRequested = false;
+      let xrRefSpace = null;
+      let xrButton = null;
+
+      // Setup MindAR image anchor and mesh
+      const anchor = mindarThree.addAnchor(0);
+      const geometry = new THREE.PlaneGeometry(1, 0.55);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.5,
+      });
+      const plane = new THREE.Mesh(geometry, material);
+      anchor.group.add(plane);
+
+      init();
+
+      let reticleHitTestResult = null;
+      const MAX_ANCHORED_OBJECTS = 30;
+      let anchoredObjects = [];
+
+      function createARButton(renderer, { requiredFeatures }) {
+        function showStartAR(/*device*/) {
+          var currentSession = null;
+
+          function onSessionStarted(session) {
+            session.addEventListener("end", onSessionEnded);
+
+            /*
+            session.updateWorldTrackingState( {
+              'planeDetectionState': { 'enabled': true }
+            } );
+            */
+
+            renderer.xr.setReferenceSpaceType("local");
+            renderer.xr.setSession(session);
+            button.textContent = "STOP AR";
+
+            currentSession = session;
+          }
+
+          function onSessionEnded(/*event*/) {
+            currentSession.removeEventListener("end", onSessionEnded);
+
+            button.textContent = "START AR";
+
+            currentSession = null;
+          }
+
+          //
+
+          button.style.display = "";
+
+          button.style.cursor = "pointer";
+          button.style.left = "calc(50% - 50px)";
+          button.style.width = "100px";
+
+          button.textContent = "START AR";
+
+          button.onmouseenter = function () {
+            button.style.opacity = "1.0";
+          };
+
+          button.onmouseleave = function () {
+            button.style.opacity = "0.5";
+          };
+
+          button.onclick = function () {
+            if (currentSession === null) {
+              start().then(() => {
+                anchor.onTargetFound = (event) => {
+                  console.log("target found");
+                  const p = new THREE.Vector3();
+                  const quaternion = new THREE.Quaternion();
+                  anchor.group.getWorldPosition(p);
+                  anchor.group.getWorldQuaternion(quaternion);
+                  console.log(p);
+                  console.log(quaternion);
+
+                  navigator.xr
+                    .requestSession("immersive-ar", { requiredFeatures })
+                    .then(onSessionStarted);
+                };
+              });
+            } else {
+              currentSession.end();
+            }
+          };
+        }
+
+        function disableButton() {
+          button.style.display = "";
+
+          button.style.cursor = "auto";
+          button.style.left = "calc(50% - 75px)";
+          button.style.width = "150px";
+
+          button.onmouseenter = null;
+          button.onmouseleave = null;
+
+          button.onclick = null;
+        }
+
+        function showARNotSupported() {
+          disableButton();
+
+          button.textContent = "AR NOT SUPPORTED";
+        }
+
+        function stylizeElement(element) {
+          element.style.position = "absolute";
+          element.style.bottom = "20px";
+          element.style.padding = "12px 6px";
+          element.style.border = "1px solid #fff";
+          element.style.borderRadius = "4px";
+          element.style.background = "rgba(0,0,0,0.1)";
+          element.style.color = "#fff";
+          element.style.font = "normal 13px sans-serif";
+          element.style.textAlign = "center";
+          element.style.opacity = "0.5";
+          element.style.outline = "none";
+          element.style.zIndex = "999";
+        }
+
+        if ("xr" in navigator) {
+          var button = document.createElement("button");
+          button.style.display = "none";
+
+          stylizeElement(button);
+
+          navigator.xr
+            .isSessionSupported("immersive-ar")
+            .then(function (supported) {
+              supported ? showStartAR() : showARNotSupported();
+            })
+            .catch(showARNotSupported);
+
+          return button;
+        } else {
+          var message = document.createElement("a");
+          message.href = "https://immersiveweb.dev/";
+
+          if (window.isSecureContext === false) {
+            message.innerHTML = "WEBXR NEEDS HTTPS"; // TODO Improve message
+          } else {
+            message.innerHTML = "WEBXR NOT AVAILABLE";
+          }
+
+          message.style.left = "calc(50% - 90px)";
+          message.style.width = "180px";
+          message.style.textDecoration = "none";
+
+          stylizeElement(message);
+
+          return message;
+        }
+      }
+
+      function init() {
+        container = document.createElement("div");
+        document.body.appendChild(container);
+
+        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        light.position.set(0.5, 1, 0.25);
+        scene.add(light);
+
+        renderer.xr.enabled = true;
+
+        document.body.appendChild(
+          createARButton(renderer, {
+            requiredFeatures: ["hit-test", "anchors", "local"],
+          })
+        );
+
+        const geometry = new THREE.CylinderGeometry(
+          0.03,
+          0.03,
+          0.1,
+          32
+        ).translate(0, 0.05, 0);
+
+        function addAnchoredObjectsToScene(anchor) {
+          const material = new THREE.MeshPhongMaterial({
+            color: 0xffffff * Math.random(),
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          reticle.matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+          mesh.scale.y = Math.random() * 2 + 1;
+          scene.add(mesh);
+
+          anchoredObjects.push({
+            anchoredObject: mesh,
+            anchor: anchor,
+          });
+
+          // For performance reasons if we add too many objects start
+          // removing the oldest ones to keep the scene complexity
+          // from growing too much.
+          if (anchoredObjects.length > MAX_ANCHORED_OBJECTS) {
+            let objectToRemove = anchoredObjects.shift();
+            scene.removeNode(objectToRemove.anchoredObject);
+            objectToRemove.anchor.delete();
+          }
+        }
+
+        function onSelect() {
+          if (reticle.visible) {
+            // const material = new THREE.MeshPhongMaterial({
+            //   color: 0xffffff * Math.random(),
+            // });
+            // const mesh = new THREE.Mesh(geometry, material);
+            // reticle.matrix.decompose(
+            //   mesh.position,
+            //   mesh.quaternion,
+            //   mesh.scale
+            // );
+            // mesh.scale.y = Math.random() * 2 + 1;
+            // scene.add(mesh);
+
+            // Create an anchor.
+            reticleHitTestResult.createAnchor().then(
+              (anchor) => {
+                addAnchoredObjectsToScene(anchor);
+              },
+              (error) => {
+                console.error("Could not create anchor: " + error);
+              }
+            );
+          }
+        }
+
+        controller = renderer.xr.getController(0);
+        controller.addEventListener("select", onSelect);
+        scene.add(controller);
+
+        reticle = new THREE.Mesh(
+          new THREE.RingGeometry(0.02, 0.03, 32).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial()
+        );
+        reticle.matrixAutoUpdate = false;
+        reticle.visible = false;
+        scene.add(reticle);
+
+        //
+
+        window.addEventListener("resize", onWindowResize);
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      //
+
+      async function start() {
+        await mindarThree.start();
+        renderer.setAnimationLoop(render);
+      }
+
+      function render(timestamp, frame) {
+        if (frame) {
+          const referenceSpace = renderer.xr.getReferenceSpace();
+          const session = renderer.xr.getSession();
+
+          if (hitTestSourceRequested === false) {
+            session
+              .requestReferenceSpace("viewer")
+              .then(function (referenceSpace) {
+                session
+                  .requestHitTestSource({ space: referenceSpace })
+                  .then(function (source) {
+                    hitTestSource = source;
+                  });
+              });
+
+            session.requestReferenceSpace("local").then((refSpace) => {
+              xrRefSpace = refSpace;
+            });
+
+            session.addEventListener("end", function () {
+              hitTestSourceRequested = false;
+              hitTestSource = null;
+            });
+
+            hitTestSourceRequested = true;
+          }
+
+          if (hitTestSource) {
+            const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+            if (hitTestResults.length) {
+              const hit = hitTestResults[0];
+              reticle.visible = true;
+              reticle.matrix.fromArray(
+                hit.getPose(xrRefSpace).transform.matrix
+              );
+              reticleHitTestResult = hitTestResults[0];
+            } else {
+              reticle.visible = false;
+            }
+          }
+
+          // Only needed if anchor is moving?
+          // for (const { anchoredObject, anchor } of anchoredObjects) {
+          //   // only update the object's position if it's still in the list
+          //   // of frame.trackedAnchors
+          //   if (!frame.trackedAnchors.has(anchor)) {
+          //     continue;
+          //   }
+          //   const anchorPose = frame.getPose(anchor.anchorSpace, xrRefSpace);
+          //   anchoredObject.matrix.elements = anchorPose.transform.matrix;
+          // }
+        }
+
+        renderer.render(scene, camera);
+      }
+    </script>
 
     <div id="container"></div>
   </body>
