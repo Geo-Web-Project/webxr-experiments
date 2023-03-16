@@ -207,9 +207,10 @@
             if (hitTestResults.length) {
               const hit = hitTestResults[0];
               reticle.visible = true;
-              reticle.matrix.fromArray(
-                hit.getPose(xrRefSpace).transform.matrix
-              );
+              const pose = hit.getPose(xrRefSpace);
+              console.log(pose);
+              console.log(pose.transform.position);
+              reticle.matrix.fromArray(pose.transform.matrix);
               reticleHitTestResult = hitTestResults[0];
             } else {
               reticle.visible = false;
