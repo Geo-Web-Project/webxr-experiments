@@ -45,6 +45,11 @@
       let controller;
       let xrViewerSpace = null;
       let xrRefSpace = null;
+      let hitTestSource = null;
+      let hitTestSourceRequested = false;
+
+      let detectedPlane = null;
+      let reticle;
 
       init();
       animate();
@@ -52,20 +57,20 @@
       const MAX_ANCHORED_OBJECTS = 30;
       let anchoredObject = null;
 
-      let coffee;
-      const OBJECT_OFFSET = 0.3;
+      let importedObj;
+      const OBJECT_OFFSET = 1.0;
 
       const loader = new GLTFLoader();
       loader.load(
         // resource URL
-        "coffee_cup.glb",
+        "buddha.glb",
         // called when the resource is loaded
         function (gltf) {
-          coffee = gltf.scene;
-          coffee.matrixAutoUpdate = false;
-          coffee.children[0].matrixAutoUpdate = false;
-          coffee.visible = false;
-          scene.add(coffee);
+          importedObj = gltf.scene;
+          importedObj.matrixAutoUpdate = false;
+          importedObj.children[0].matrixAutoUpdate = false;
+          importedObj.visible = false;
+          scene.add(importedObj);
         },
         // called while loading is progressing
         function (xhr) {
@@ -90,7 +95,7 @@
           20
         );
 
-        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        const light = new THREE.DirectionalLight(0xffffff, 0.5);
         light.position.set(0.5, 1, 0.25);
         scene.add(light);
 
@@ -109,7 +114,13 @@
 
         document.body.appendChild(
           ARButton.createButton(renderer, {
-            requiredFeatures: ["anchors", "local", "image-tracking"],
+            requiredFeatures: [
+              "anchors",
+              "local",
+              "image-tracking",
+              "hit-test",
+              "plane-detection",
+            ],
             trackedImages: [
               {
                 image: imgBitmap,
@@ -121,6 +132,14 @@
 
         controller = renderer.xr.getController(0);
         scene.add(controller);
+
+        reticle = new THREE.Mesh(
+          new THREE.RingGeometry(0.02, 0.03, 32).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial()
+        );
+        reticle.matrixAutoUpdate = false;
+        reticle.visible = false;
+        scene.add(reticle);
 
         window.addEventListener("resize", onWindowResize);
       }
@@ -138,17 +157,27 @@
         renderer.setAnimationLoop(render);
       }
 
-      function addAnchoredObjectToScene(anchor, anchorPose) {
-        coffee.matrix.fromArray(anchorPose.transform.matrix);
+      function addAnchoredObjectToScene(
+        anchor,
+        anchorPoseT,
+        detectedPlanePose
+      ) {
+        importedObj.matrix.fromArray(anchorPoseT.matrix);
 
         const pos = new THREE.Vector3();
-        pos.setFromMatrixPosition(coffee.children[0].matrix);
-        pos.setX(OBJECT_OFFSET);
-        coffee.children[0].matrix.setPosition(pos);
-        coffee.visible = true;
+        pos.setFromMatrixPosition(importedObj.children[0].matrix);
+
+        if (detectedPlanePose) {
+          console.log(detectedPlanePose.transform.position.y);
+          pos.setY(-detectedPlanePose.transform.position.y);
+        }
+
+        pos.setZ(OBJECT_OFFSET);
+        importedObj.children[0].matrix.setPosition(pos);
+        importedObj.visible = true;
 
         anchoredObject = {
-          anchoredObject: coffee,
+          anchoredObject: importedObj,
           anchor: anchor,
           shouldUpdate: false,
         };
@@ -168,6 +197,64 @@
 
         if (frame && xrRefSpace && xrViewerSpace) {
           const referenceSpace = renderer.xr.getReferenceSpace();
+
+          if (hitTestSourceRequested === false) {
+            session
+              .requestReferenceSpace("viewer")
+              .then(function (referenceSpace) {
+                session
+                  .requestHitTestSource({ space: referenceSpace })
+                  .then(function (source) {
+                    hitTestSource = source;
+                  });
+              });
+
+            session.addEventListener("end", function () {
+              hitTestSourceRequested = false;
+              hitTestSource = null;
+            });
+
+            hitTestSourceRequested = true;
+          }
+
+          if (hitTestSource) {
+            const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+            if (hitTestResults.length) {
+              const hit = hitTestResults[0];
+              const pose = hit.getPose(xrRefSpace);
+
+              reticle.visible = true;
+              reticle.matrix.fromArray(pose.transform.matrix);
+            }
+          }
+
+          if (frame.detectedPlanes) {
+            frame.detectedPlanes.forEach((plane) => {
+              const planePose = frame.getPose(plane.planeSpace, referenceSpace);
+              if (detectedPlane && planePose) {
+                const detectedPlanePose = frame.getPose(
+                  detectedPlane.planeSpace,
+                  referenceSpace
+                );
+                if (
+                  planePose.transform.position.y <
+                  detectedPlanePose.transform.position.y
+                ) {
+                  detectedPlane = plane;
+                  console.log(detectedPlane);
+                }
+              } else if (
+                detectedPlane &&
+                !frame.detectedPlanes.has(detectedPlane)
+              ) {
+                detectedPlane = null;
+              } else {
+                detectedPlane = plane;
+                console.log(detectedPlane);
+              }
+            });
+          }
 
           const imageTrackingResults = frame.getImageTrackingResults(); //checking if there are any images we track
           //if we have more than one image the results are an array
@@ -190,9 +277,22 @@
               }
               if (!anchoredObject) {
                 console.log("Create anchor at: ", pose);
+                let detectedPlanePose;
+
+                if (detectedPlane) {
+                  detectedPlanePose = frame.getPose(
+                    result.imageSpace,
+                    detectedPlane.planeSpace
+                  );
+                }
+
                 frame.createAnchor(pose.transform, xrRefSpace).then(
                   (anchor) => {
-                    addAnchoredObjectToScene(anchor, pose);
+                    addAnchoredObjectToScene(
+                      anchor,
+                      pose.transform,
+                      detectedPlanePose
+                    );
                   },
                   (error) => {
                     console.error("Could not create anchor: " + error);
