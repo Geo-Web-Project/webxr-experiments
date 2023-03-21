@@ -15,7 +15,7 @@
       ar - hit test<br />(Chrome Android 81+)
     </div>
 
-    <img id="img" src="/bookmark.png" style="display: none" />
+    <img id="img" src="/bookcover.jpg" style="display: none" />
 
     <!-- Import maps polyfill -->
     <!-- Remove this when import maps will be widely supported -->
@@ -58,12 +58,13 @@
       let anchoredObject = null;
 
       let importedObj;
-      const OBJECT_OFFSET = 1.0;
+      const OBJECT_OFFSET = 0.25;
+      const IMAGE_WIDTH = 0.165;
 
       const loader = new GLTFLoader();
       loader.load(
         // resource URL
-        "buddha.glb",
+        "coffee_cup.glb",
         // called when the resource is loaded
         function (gltf) {
           importedObj = gltf.scene;
@@ -119,12 +120,11 @@
               "local",
               "image-tracking",
               "hit-test",
-              "plane-detection",
             ],
             trackedImages: [
               {
                 image: imgBitmap,
-                widthInMeters: 0.03175,
+                widthInMeters: IMAGE_WIDTH,
               },
             ],
           })
@@ -172,7 +172,8 @@
           pos.setY(-detectedPlanePose.transform.position.y);
         }
 
-        pos.setZ(OBJECT_OFFSET);
+        pos.setX(OBJECT_OFFSET);
+
         importedObj.children[0].matrix.setPosition(pos);
         importedObj.visible = true;
 
@@ -217,17 +218,17 @@
             hitTestSourceRequested = true;
           }
 
-          if (hitTestSource) {
-            const hitTestResults = frame.getHitTestResults(hitTestSource);
-
-            if (hitTestResults.length) {
-              const hit = hitTestResults[0];
-              const pose = hit.getPose(xrRefSpace);
-
-              reticle.visible = true;
-              reticle.matrix.fromArray(pose.transform.matrix);
-            }
-          }
+          //           if (hitTestSource) {
+          //             const hitTestResults = frame.getHitTestResults(hitTestSource);
+          //
+          //             if (hitTestResults.length) {
+          //               const hit = hitTestResults[0];
+          //               const pose = hit.getPose(xrRefSpace);
+          //
+          //               reticle.visible = true;
+          //               reticle.matrix.fromArray(pose.transform.matrix);
+          //             }
+          //           }
 
           if (frame.detectedPlanes) {
             frame.detectedPlanes.forEach((plane) => {
@@ -257,6 +258,7 @@
           }
 
           const imageTrackingResults = frame.getImageTrackingResults(); //checking if there are any images we track
+
           //if we have more than one image the results are an array
           for (const result of imageTrackingResults) {
             // The result's index is the image's position in the trackedImages array specified at session creation
