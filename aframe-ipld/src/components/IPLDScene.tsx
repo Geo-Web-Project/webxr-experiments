@@ -1,64 +1,42 @@
 import React from "react";
 import { useXR } from "@react-three/xr";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
-import type { IPFS } from "ipfs-core-types";
 import { GLTF } from "three/examples/jsm/loaders/GLTFLoader";
 import { CID } from "multiformats/cid";
-import { default as axios } from "axios";
-import * as Block from "multiformats/block";
-import * as dagjson from "@ipld/dag-json";
-import { sha256 as hasher } from "multiformats/hashes/sha2";
+import { IPFS_GATEWAY_HOST } from "../App";
 
 type IPLDSceneProps = {
-  ipfs: IPFS;
-  rootCID: CID;
+  arPackage: Package;
 };
 
 type GlTFModelComponent = CID;
-type PositionComponent = {
+type VectorComponent = {
   x: number;
   y: number;
   z: number;
 };
+type PositionComponent = VectorComponent;
+type ScaleComponent = VectorComponent;
+type RotationComponent = VectorComponent;
 
-type Package = {
+export type Package = {
   glTFModel?: GlTFModelComponent;
   position?: PositionComponent;
+  scale?: ScaleComponent;
+  rotation?: RotationComponent;
 };
 
-const ipfsGatewayHost = "https://dweb.link";
-
-export default function IPLDScene({ ipfs, rootCID }: IPLDSceneProps) {
+export default function IPLDScene({ arPackage }: IPLDSceneProps) {
   const { session } = useXR();
 
-  const [arPackage, setArPackage] = React.useState<Package | null>(null);
   const [gltf, setGltf] = React.useState<GLTF | null>(null);
 
   React.useEffect(() => {
     async function fetch() {
-      const cidStr = rootCID.toString();
-      console.debug(
-        `Retrieving raw block from: ${ipfsGatewayHost}/ipfs/${cidStr}`
-      );
-      const rawBlock = await axios.get(`${ipfsGatewayHost}/ipfs/${cidStr}`, {
-        responseType: "arraybuffer",
-        headers: { Accept: "application/vnd.ipld.raw" },
-      });
-      const uintBuffer = new Uint8Array(rawBlock.data);
-      const block = await Block.decode({
-        bytes: uintBuffer,
-        codec: dagjson,
-        hasher,
-      });
-
-      const v = block.value as Package;
-      setArPackage(v);
-
-      if (v.glTFModel) {
+      if (arPackage.glTFModel) {
         const loader = new GLTFLoader();
         loader.load(
-          `https://dweb.link/ipfs/${v.glTFModel.toString()}`,
-          // called when the resource is loaded
+          `${IPFS_GATEWAY_HOST}/ipfs/${arPackage.glTFModel.toString()}`,
           function (_gltf) {
             setGltf(_gltf);
           },
@@ -76,11 +54,11 @@ export default function IPLDScene({ ipfs, rootCID }: IPLDSceneProps) {
     }
 
     fetch();
-  }, [ipfs, rootCID]);
+  }, [arPackage]);
 
-  // if (!session) {
-  //   return null;
-  // }
+  if (!session) {
+    return null;
+  }
 
   return (
     <>
@@ -88,6 +66,20 @@ export default function IPLDScene({ ipfs, rootCID }: IPLDSceneProps) {
       {gltf && arPackage ? (
         <primitive
           object={gltf.scene}
+          scale={
+            arPackage.scale
+              ? [arPackage.scale.x, arPackage.scale.y, arPackage.scale.z]
+              : null
+          }
+          rotation={
+            arPackage.rotation
+              ? [
+                  arPackage.rotation.x,
+                  arPackage.rotation.y,
+                  arPackage.rotation.z,
+                ]
+              : null
+          }
           position={
             arPackage.position
               ? [

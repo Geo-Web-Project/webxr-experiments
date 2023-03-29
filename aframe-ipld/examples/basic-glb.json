@@ -1,4 +1,6 @@
 {
-  "position": { "x": 0, "y": 0, "z": 2 },
+  "position": { "x": 0, "y": 0, "z": -1 },
+  "scale": { "x": 2, "y": 2, "z": 2 },
+  "rotation": { "x": 0, "y": 1.570796, "z": 0 },
   "glTFModel": { "/": "QmRh7FTaB3AdX2x29BG7PbMUedhZQmo3xfLnxV2U61BcCU" }
 }
