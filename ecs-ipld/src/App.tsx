@@ -4,9 +4,7 @@ import { Canvas } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
 import type { IPFS } from "ipfs-core-types";
 import { default as axios } from "axios";
-import * as Block from "multiformats/block";
-import * as dagjson from "@ipld/dag-json";
-import { sha256 as hasher } from "multiformats/hashes/sha2";
+import { CID } from "multiformats/cid";
 
 export const IPFS_GATEWAY_HOST = "https://dweb.link";
 
@@ -28,27 +26,37 @@ function App({ ipfsP }: { ipfsP: any }) {
 
   React.useEffect(() => {
     (async () => {
-      console.debug(
-        `Retrieving raw block from: ${IPFS_GATEWAY_HOST}/ipfs/${rootCIDStr}`
-      );
-      const rawBlock = await axios.get(
-        `${IPFS_GATEWAY_HOST}/ipfs/${rootCIDStr}`,
-        {
-          responseType: "arraybuffer",
-          headers: { Accept: "application/vnd.ipld.raw" },
-        }
-      );
-      const uintBuffer = new Uint8Array(rawBlock.data);
-      const block = await Block.decode({
-        bytes: uintBuffer,
-        codec: dagjson,
-        hasher,
-      });
+      if (!ipfs) return;
 
-      const v = block.value as Package;
+      let result;
+
+      try {
+        result = await ipfs.dag.get(CID.parse(rootCIDStr), { timeout: 2000 });
+      } catch (e) {
+        console.debug(`Fetching CAR from Web3.storage: ${rootCIDStr}`);
+        const carResponse = await axios.get(
+          `https://w3s.link/ipfs/${rootCIDStr}`,
+          {
+            responseType: "blob",
+            headers: { Accept: "application/vnd.ipld.car" },
+          }
+        );
+        console.debug(`Importing CAR from Web3.storage: ${rootCIDStr}`);
+        const data = carResponse.data as Blob;
+        const buffer = await data.arrayBuffer();
+        const uintBuffer = new Uint8Array(buffer);
+        ipfs.dag.import(
+          (async function* () {
+            yield uintBuffer;
+          })()
+        );
+
+        result = await ipfs.dag.get(CID.parse(rootCIDStr));
+      }
+      const v = result.value as Package;
       setArPackage(v);
     })();
-  }, []);
+  }, [ipfs]);
 
   return (
     <>
@@ -74,7 +82,7 @@ function App({ ipfsP }: { ipfsP: any }) {
             }}
           >
             <XR referenceSpace="local">
-              <IPLDScene arPackage={arPackage} />
+              <IPLDScene ipfs={ipfs} arPackage={arPackage} />
             </XR>
           </Canvas>
         </>
