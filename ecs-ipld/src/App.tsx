@@ -1,5 +1,5 @@
 import React from "react";
-import IPLDScene, { Package } from "./components/IPLDScene";
+import IPLDWorld, { Package } from "./components/IPLDWorld";
 import { Canvas } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
 import type { IPFS } from "ipfs-core-types";
@@ -82,7 +82,7 @@ function App({ ipfsP }: { ipfsP: any }) {
             }}
           >
             <XR referenceSpace="local">
-              <IPLDScene ipfs={ipfs} arPackage={arPackage} />
+              <IPLDWorld ipfs={ipfs} arPackage={arPackage} />
             </XR>
           </Canvas>
         </>

@@ -2534,6 +2534,18 @@
   resolved "https://registry.yarnpkg.com/@protobufjs/utf8/-/utf8-1.1.0.tgz#a777360b5b39a1a2e5106f8e858f2fd2d060c570"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
+"@react-ecs/core@^0.0.3":
+  version "0.0.3"
+  resolved "https://registry.yarnpkg.com/@react-ecs/core/-/core-0.0.3.tgz#fa85faa7e6ed36d400c6499dafaf04b40bfd8495"
+  integrity sha512-SlNzG+Hd9Nu55NltZLdngwFUlZ23tXkegU7krTucA/3wtPA26Vt72mvb/mYm13PsmagQHI6UQOKl+J9TZXeNlw==
+  dependencies:
+    tick-knock "^3.0.1"
+
+"@react-ecs/three@^0.0.3":
+  version "0.0.3"
+  resolved "https://registry.yarnpkg.com/@react-ecs/three/-/three-0.0.3.tgz#8c1e75cd5af907a01a22b1354d519fe1cde18ec7"
+  integrity sha512-QoBgUWDF9e0gJgkBMi4Sk09UNSiQPrR9caJtSbHcrlYhTnOcnbdmXYdh8KR5umoVgfxaP3HLjKhM6IhS36Eswg==
+
 "@react-spring/animated@~9.6.1":
   version "9.6.1"
   resolved "https://registry.yarnpkg.com/@react-spring/animated/-/animated-9.6.1.tgz#ccc626d847cbe346f5f8815d0928183c647eb425"
@@ -9294,6 +9306,11 @@ mmd-parser@^1.0.4:
   resolved "https://registry.yarnpkg.com/mmd-parser/-/mmd-parser-1.0.4.tgz#87cc05782cb5974ca854f0303fc5147bc9d690e7"
   integrity sha512-Qi0VCU46t2IwfGv5KF0+D/t9cizcDug7qnNoy9Ggk7aucp0tssV8IwTMkBlDbm+VqAf3cdQHTCARKSsuS2MYFg==
 
+mobx@^6.9.0:
+  version "6.9.0"
+  resolved "https://registry.yarnpkg.com/mobx/-/mobx-6.9.0.tgz#8a894c26417c05bed2cf7499322e589ee9787397"
+  integrity sha512-HdKewQEREEJgsWnErClfbFoVebze6rGazxFLU/XUyrII8dORfVszN1V0BMRnQSzcgsNNtkX8DHj3nC6cdWE9YQ==
+
 module-error@^1.0.1, module-error@^1.0.2:
   version "1.0.2"
   resolved "https://registry.yarnpkg.com/module-error/-/module-error-1.0.2.tgz#8d1a48897ca883f47a45816d4fb3e3c6ba404d86"
@@ -12081,6 +12098,13 @@ thunky@^1.0.2:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/thunky/-/thunky-1.1.0.tgz#5abaf714a9405db0504732bbccd2cedd9ef9537d"
   integrity sha512-eHY7nBftgThBqOyHGVN+l8gF0BucP09fMo0oO/Lb0w1OF80dJv+lDVpXG60WMQvkcxAkNybKsrEIE3ZtKGmPrA==
+
+tick-knock@^3.0.1:
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/tick-knock/-/tick-knock-3.0.1.tgz#4b858933bdb93b25f24330ac62a47ddcfb510d07"
+  integrity sha512-r9fCKdmKQ1dSmoV0LAy+mzqwRcgfzRklIsQsQp0ccua8mYW0zhnNi0x/M2s3gPQSJxEBcgiAf3HI7NbBUGN3zg==
+  dependencies:
+    tslib "^2.1.0"
 
 timeout-abort-controller@^3.0.0:
   version "3.0.0"

@@ -5,6 +5,8 @@
   "dependencies": {
     "@ipld/car": "^5.1.1",
     "@ipld/dag-json": "^10.0.1",
+    "@react-ecs/core": "^0.0.3",
+    "@react-ecs/three": "^0.0.3",
     "@react-three/drei": "^9.58.5",
     "@react-three/fiber": "^8.12.0",
     "@react-three/xr": "^5.4.1",
@@ -21,6 +23,7 @@
     "ipfs-core": "^0.18.0",
     "ipfs-http-client": "^60.0.0",
     "ipfs-provider": "^2.1.0",
+    "mobx": "^6.9.0",
     "multiformats": "^11.0.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
