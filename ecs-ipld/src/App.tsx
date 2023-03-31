@@ -31,7 +31,8 @@ function App({ ipfsP }: { ipfsP: any }) {
       let result;
 
       try {
-        result = await ipfs.dag.get(CID.parse(rootCIDStr), { timeout: 2000 });
+        result = await ipfs.dag.get(CID.parse(rootCIDStr), { timeout: 100 });
+        console.debug("Found CAR in IPFS");
       } catch (e) {
         console.debug(`Fetching CAR from Web3.storage: ${rootCIDStr}`);
         const carResponse = await axios.get(
