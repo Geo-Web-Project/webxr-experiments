@@ -17,27 +17,38 @@ import { Entity, Facet } from "@react-ecs/core";
 import { Vector3, Quaternion } from "three";
 
 type IPLDSceneProps = {
-  arPackage: Package;
+  arPackage: World;
   ipfs: IPFS;
 };
+
+class CIDFacet extends Facet<CIDFacet> {
+  cid?: CID = undefined;
+}
 
 class GLTFFacet extends Facet<GLTFFacet> {
   glTFModel?: GLTF = undefined;
 }
 
 class Position extends Facet<Position> {
-  position? = new Vector3(0, 0, 0);
+  startPosition = new Vector3(0, 0, 0);
+  position?: Vector3 = undefined;
 }
 
 class Scale extends Facet<Scale> {
-  scale? = new Vector3(1, 1, 1);
+  startScale = new Vector3(1, 1, 1);
+  scale?: Vector3 = undefined;
 }
 
 class Rotation extends Facet<Rotation> {
-  rotation? = new Quaternion(0, 0, 0, 0);
+  startRotation = new Quaternion(0, 0, 0, 0);
+  rotation?: Quaternion = undefined;
 }
 
-export type Package = CID[];
+class Parent extends Facet<Parent> {
+  parent?: CID = undefined;
+}
+
+export type World = CID[];
 
 type VectorComponent = {
   x: number;
@@ -55,6 +66,7 @@ type EntityData = {
   position?: VectorComponent;
   scale?: VectorComponent;
   rotation?: QuaternionComponent;
+  parent?: CID;
 };
 
 const GLTFSystem = () => {
@@ -65,6 +77,25 @@ const GLTFSystem = () => {
       if (gltf.glTFModel && view.object3d.visible == false) {
         view.object3d.copy(gltf.glTFModel.scene);
         view.object3d.visible = true;
+      }
+    });
+  });
+};
+
+const ParentTransformSystem = () => {
+  const query = useQuery((e) => e.hasAll(Parent, Position));
+  const parentQuery = useQuery((e) => e.hasAll(ThreeView, CIDFacet, Position));
+
+  return useSystem((_: number) => {
+    query.loop([Parent, Position], (_, [parent, position]) => {
+      const parentResult = parentQuery.filter(
+        (e) => e.get(CIDFacet)?.cid?.equals(parent.parent) ?? false
+      );
+      if (parentResult.length > 0) {
+        const parentTransform = parentResult[0].get(ThreeView)!.ref.current!;
+        position.position = parentTransform.position.add(
+          position.startPosition
+        );
       }
     });
   });
@@ -81,13 +112,15 @@ const TransformSystem = () => {
       (_, [view, position, rotation, scale]) => {
         const transform = view.ref.current!;
         if (position) {
-          transform.position.copy(position.position);
+          transform.position.copy(position.position ?? position.startPosition);
         }
         if (rotation) {
-          transform.quaternion.copy(rotation.rotation);
+          transform.quaternion.copy(
+            rotation.rotation ?? rotation.startRotation
+          );
         }
         if (scale) {
-          transform.scale.copy(scale.scale);
+          transform.scale.copy(scale.scale ?? scale.startScale);
         }
         transform.updateMatrix();
       }
@@ -157,43 +190,42 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
     fetch();
   }, []);
 
+  let position: any = {};
+  if (entityData && entityData.position) {
+    position["startPosition"] = new Vector3(
+      entityData.position.x,
+      entityData.position.y,
+      entityData.position.z
+    );
+  }
+
+  let scale: any = {};
+  if (entityData && entityData.scale) {
+    scale["startScale"] = new Vector3(
+      entityData.scale.x,
+      entityData.scale.y,
+      entityData.scale.z
+    );
+  }
+
+  let rotation: any = {};
+  if (entityData && entityData.rotation) {
+    rotation["startRotation"] = new Quaternion(
+      entityData.rotation.x,
+      entityData.rotation.y,
+      entityData.rotation.z,
+      entityData.rotation.w
+    );
+  }
+
   return gltf && entityData ? (
     <Entity>
       {gltf ? <GLTFFacet glTFModel={gltf} /> : null}
-      {entityData.position ? (
-        <Position
-          position={
-            new Vector3(
-              entityData.position.x,
-              entityData.position.y,
-              entityData.position.z
-            )
-          }
-        />
-      ) : null}
-      {entityData.rotation ? (
-        <Rotation
-          rotation={
-            new Quaternion(
-              entityData.rotation.x,
-              entityData.rotation.y,
-              entityData.rotation.z,
-              entityData.rotation.w
-            )
-          }
-        />
-      ) : null}
-      {entityData.scale ? (
-        <Scale
-          scale={
-            new Vector3(
-              entityData.scale.x,
-              entityData.scale.y,
-              entityData.scale.z
-            )
-          }
-        />
-      ) : null}
+      <CIDFacet cid={entityCID} />
+      <Position {...position} />
+      <Scale {...scale} />
+      <Rotation {...rotation} />
+      {entityData.parent ? <Parent parent={entityData.parent} /> : null}
       <ThreeView>
         <object3D matrixAutoUpdate={false} visible={false} />
       </ThreeView>
@@ -216,6 +248,7 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
       <ECS.Provider>
         <GLTFSystem />
         <TransformSystem />
+        <ParentTransformSystem />
         {arPackage.map((entityCID) => {
           return (
             <Model

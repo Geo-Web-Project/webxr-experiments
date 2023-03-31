@@ -1,5 +1,5 @@
 import React from "react";
-import IPLDWorld, { Package } from "./components/IPLDWorld";
+import IPLDWorld, { World } from "./components/IPLDWorld";
 import { Canvas } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
 import type { IPFS } from "ipfs-core-types";
@@ -13,9 +13,9 @@ function App({ ipfsP }: { ipfsP: any }) {
   const rootCIDStr =
     hash.length > 0
       ? hash.replace("#", "")
-      : "baguqeerapq7vkke4pyivw2iptex3z352hg7agozle53llafgkm3t2e6x22jq";
+      : "baguqeeran4zdh2qzqjii34mobkgcs4mao46gxpgzmognzaexjmhchyf7chwq";
   const [ipfs, setIpfs] = React.useState<IPFS | null>(null);
-  const [arPackage, setArPackage] = React.useState<Package | null>(null);
+  const [arPackage, setArPackage] = React.useState<World | null>(null);
 
   React.useEffect(() => {
     (async () => {
@@ -53,7 +53,7 @@ function App({ ipfsP }: { ipfsP: any }) {
 
         result = await ipfs.dag.get(CID.parse(rootCIDStr));
       }
-      const v = result.value as Package;
+      const v = result.value as World;
       setArPackage(v);
     })();
   }, [ipfs]);
