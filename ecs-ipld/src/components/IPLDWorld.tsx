@@ -84,7 +84,7 @@ const GLTFSystem = () => {
 
 const ParentTransformSystem = () => {
   const query = useQuery((e) => e.hasAll(Parent, Position));
-  const parentQuery = useQuery((e) => e.hasAll(ThreeView, CIDFacet, Position));
+  const parentQuery = useQuery((e) => e.hasAll(CIDFacet, Position));
 
   return useSystem((_: number) => {
     query.loop([Parent, Position], (_, [parent, position]) => {
@@ -92,10 +92,13 @@ const ParentTransformSystem = () => {
         (e) => e.get(CIDFacet)?.cid?.equals(parent.parent) ?? false
       );
       if (parentResult.length > 0) {
-        const parentTransform = parentResult[0].get(ThreeView)!.ref.current!;
-        position.position = parentTransform.position.add(
-          position.startPosition
-        );
+        const parentPosition = parentResult[0].get(Position);
+        if (parentPosition) {
+          const newPosition =
+            parentPosition.position?.clone() ??
+            parentPosition.startPosition.clone();
+          position.position = newPosition.add(position.startPosition);
+        }
       }
     });
   });
