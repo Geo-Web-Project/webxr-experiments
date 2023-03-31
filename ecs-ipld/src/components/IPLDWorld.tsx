@@ -21,6 +21,10 @@ type IPLDSceneProps = {
   ipfs: IPFS;
 };
 
+class GLTFFacet extends Facet<GLTFFacet> {
+  glTFModel?: GLTF = undefined;
+}
+
 class Position extends Facet<Position> {
   position? = new Vector3(0, 0, 0);
 }
@@ -51,6 +55,19 @@ type EntityData = {
   position?: VectorComponent;
   scale?: VectorComponent;
   rotation?: QuaternionComponent;
+};
+
+const GLTFSystem = () => {
+  const query = useQuery((e) => e.hasAll(ThreeView, GLTFFacet));
+
+  return useSystem((_: number) => {
+    query.loop([ThreeView, GLTFFacet], (_, [view, gltf]) => {
+      if (gltf.glTFModel && view.object3d.visible == false) {
+        view.object3d.copy(gltf.glTFModel.scene);
+        view.object3d.visible = true;
+      }
+    });
+  });
 };
 
 const TransformSystem = () => {
@@ -142,6 +159,7 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
 
   return gltf && entityData ? (
     <Entity>
+      {gltf ? <GLTFFacet glTFModel={gltf} /> : null}
       {entityData.position ? (
         <Position
           position={
@@ -177,7 +195,7 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
         />
       ) : null}
       <ThreeView>
-        <primitive object={gltf.scene} matrixAutoUpdate={false} />
+        <object3D matrixAutoUpdate={false} visible={false} />
       </ThreeView>
     </Entity>
   ) : null;
@@ -196,6 +214,7 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
     <>
       <hemisphereLight groundColor={0xbbbbff} position={[0.5, 1, 0.25]} />
       <ECS.Provider>
+        <GLTFSystem />
         <TransformSystem />
         {arPackage.map((entityCID) => {
           return (

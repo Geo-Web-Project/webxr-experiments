@@ -1,9 +1,8 @@
 {
   "parent": {
-    "/": "baguqeeram5nxvjuubpokm4fin6evoyj4bztvygnyx3ivewm74aspksfbmyma"
+    "/": "baguqeeraeo4yodv4xqb7xp5k5qldbiescdqvhpg2nbzsovdexvaep3vanhbq"
   },
   "position": { "x": 0, "y": 0, "z": -1 },
-  "scale": { "x": 2, "y": 2, "z": 2 },
-  "rotation": { "x": 0, "y": 1.570796, "z": 0 },
+  "scale": { "x": 1, "y": 1, "z": 1 },
   "glTFModel": { "/": "QmRh7FTaB3AdX2x29BG7PbMUedhZQmo3xfLnxV2U61BcCU" }
 }
