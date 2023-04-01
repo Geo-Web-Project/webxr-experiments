@@ -1,10 +1,9 @@
 import React from "react";
 import IPLDWorld, { World } from "./components/IPLDWorld";
-import { Canvas } from "@react-three/fiber";
-import { ARButton, XR } from "@react-three/xr";
 import type { IPFS } from "ipfs-core-types";
 import { default as axios } from "axios";
 import { CID } from "multiformats/cid";
+import { CarReader } from "@ipld/car/reader";
 
 export const IPFS_GATEWAY_HOST = "https://dweb.link";
 
@@ -31,7 +30,7 @@ function App({ ipfsP }: { ipfsP: any }) {
       let result;
 
       try {
-        result = await ipfs.dag.get(CID.parse(rootCIDStr), { timeout: 100 });
+        result = await ipfs.dag.get(CID.parse(rootCIDStr), { timeout: 1000 });
         console.debug("Found CAR in IPFS");
       } catch (e) {
         console.debug(`Fetching CAR from Web3.storage: ${rootCIDStr}`);
@@ -46,11 +45,11 @@ function App({ ipfsP }: { ipfsP: any }) {
         const data = carResponse.data as Blob;
         const buffer = await data.arrayBuffer();
         const uintBuffer = new Uint8Array(buffer);
-        ipfs.dag.import(
-          (async function* () {
-            yield uintBuffer;
-          })()
-        );
+
+        const reader = await CarReader.fromBytes(uintBuffer);
+        const block = await reader.get(CID.parse(rootCIDStr));
+        const putRes = await ipfs.block.put(block!.bytes);
+        console.debug(`Imported CAR from Web3.storage: ${putRes.toString()}`);
 
         result = await ipfs.dag.get(CID.parse(rootCIDStr));
       }
@@ -62,31 +61,7 @@ function App({ ipfsP }: { ipfsP: any }) {
   return (
     <>
       {ipfs && arPackage ? (
-        <>
-          <ARButton
-            sessionInit={{
-              requiredFeatures: [
-                "local",
-                "hit-test",
-                // "image-tracking",
-                // "anchors",
-                // "plane-detection",
-              ],
-            }}
-          />
-          <Canvas
-            camera={{
-              fov: 70,
-              aspect: window.innerWidth / window.innerHeight,
-              near: 0.01,
-              far: 20,
-            }}
-          >
-            <XR referenceSpace="local">
-              <IPLDWorld ipfs={ipfs} arPackage={arPackage} />
-            </XR>
-          </Canvas>
-        </>
+        <IPLDWorld ipfs={ipfs} arPackage={arPackage} />
       ) : null}
     </>
   );

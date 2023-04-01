@@ -15,6 +15,9 @@ import {
 import { ThreeView } from "@react-ecs/three";
 import { Entity, Facet } from "@react-ecs/core";
 import { Vector3, Quaternion } from "three";
+import { Canvas } from "@react-three/fiber";
+import { ARButton, XR } from "@react-three/xr";
+import { CarReader } from "@ipld/car/reader";
 
 type IPLDSceneProps = {
   arPackage: World;
@@ -46,6 +49,11 @@ class Rotation extends Facet<Rotation> {
 
 class Parent extends Facet<Parent> {
   parent?: CID = undefined;
+}
+
+class TrackedImage extends Facet<TrackedImage> {
+  imageAsset?: CID = undefined;
+  physicalWidthInMeters?: number = undefined;
 }
 
 export type World = CID[];
@@ -131,6 +139,19 @@ const TransformSystem = () => {
   });
 };
 
+const ImageTrackingSystem = () => {
+  const query = useQuery((e) => e.hasAll(ThreeView, GLTFFacet));
+
+  return useSystem((_: number) => {
+    query.loop([ThreeView, GLTFFacet], (_, [view, gltf]) => {
+      if (gltf.glTFModel && view.object3d.visible == false) {
+        view.object3d.copy(gltf.glTFModel.scene);
+        view.object3d.visible = true;
+      }
+    });
+  });
+};
+
 function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
   const [gltf, setGltf] = React.useState<GLTF | null>(null);
   const [entityData, setEntityData] = React.useState<EntityData | null>(null);
@@ -160,11 +181,11 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
         const data = carResponse.data as Blob;
         const buffer = await data.arrayBuffer();
         const uintBuffer = new Uint8Array(buffer);
-        ipfs.dag.import(
-          (async function* () {
-            yield uintBuffer;
-          })()
-        );
+
+        const reader = await CarReader.fromBytes(uintBuffer);
+        const block = await reader.get(entityCID);
+        const putRes = await ipfs.block.put(block!.bytes);
+        console.debug(`Imported CAR from Web3.storage: ${putRes.toString()}`);
 
         result = await ipfs.dag.get(entityCID);
       }
@@ -237,31 +258,55 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
 }
 
 export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
-  const { session } = useXR();
   const ECS = useECS();
   useAnimationFrame(ECS.update);
 
-  if (!session) {
-    return null;
-  }
+  const [showWorld, setShowWorld] = React.useState(false);
 
   return (
-    <>
-      <hemisphereLight groundColor={0xbbbbff} position={[0.5, 1, 0.25]} />
-      <ECS.Provider>
-        <GLTFSystem />
-        <TransformSystem />
-        <ParentTransformSystem />
-        {arPackage.map((entityCID) => {
-          return (
-            <Model
-              key={entityCID.toString()}
-              entityCID={entityCID}
-              ipfs={ipfs}
-            />
-          );
-        })}
-      </ECS.Provider>
-    </>
+    <ECS.Provider>
+      <ARButton
+        sessionInit={{
+          requiredFeatures: [
+            "local",
+            "hit-test",
+            // "image-tracking",
+            // "anchors",
+            // "plane-detection",
+          ],
+        }}
+      />
+      <Canvas
+        camera={{
+          fov: 70,
+          aspect: window.innerWidth / window.innerHeight,
+          near: 0.01,
+          far: 20,
+        }}
+      >
+        <XR referenceSpace="local" onSessionStart={() => setShowWorld(true)}>
+          {showWorld ? (
+            <>
+              <hemisphereLight
+                groundColor={0xbbbbff}
+                position={[0.5, 1, 0.25]}
+              />
+              <GLTFSystem />
+              <TransformSystem />
+              <ParentTransformSystem />
+              {arPackage.map((entityCID) => {
+                return (
+                  <Model
+                    key={entityCID.toString()}
+                    entityCID={entityCID}
+                    ipfs={ipfs}
+                  />
+                );
+              })}
+            </>
+          ) : null}
+        </XR>
+      </Canvas>
+    </ECS.Provider>
   );
 }
