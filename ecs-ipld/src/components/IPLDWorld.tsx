@@ -1,5 +1,4 @@
 import React from "react";
-import { useXR } from "@react-three/xr";
 import { CID } from "multiformats/cid";
 import { IPFS_GATEWAY_HOST } from "../App";
 import type { IPFS } from "ipfs-core-types";
@@ -14,6 +13,7 @@ import {
 } from "@react-ecs/core";
 import { ThreeView } from "@react-ecs/three";
 import { Entity, Facet } from "@react-ecs/core";
+import { Entity as TickEntity } from "tick-knock";
 import { Vector3, Quaternion } from "three";
 import { Canvas } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
@@ -56,6 +56,9 @@ class TrackedImage extends Facet<TrackedImage> {
   physicalWidthInMeters?: number = undefined;
 }
 
+class TrackedImages extends Facet<TrackedImages> {
+  trackedImages: TrackedImageComponent[] = [];
+}
 export type World = CID[];
 
 type VectorComponent = {
@@ -69,12 +72,17 @@ type QuaternionComponent = {
   z: number;
   w: number;
 };
+type TrackedImageComponent = {
+  imageAsset?: CID;
+  physicalWidthInMeters?: number;
+};
 type EntityData = {
   glTFModel: CID;
   position?: VectorComponent;
   scale?: VectorComponent;
   rotation?: QuaternionComponent;
   parent?: CID;
+  trackedImage?: TrackedImageComponent;
 };
 
 const GLTFSystem = () => {
@@ -139,16 +147,23 @@ const TransformSystem = () => {
   });
 };
 
-const ImageTrackingSystem = () => {
-  const query = useQuery((e) => e.hasAll(ThreeView, GLTFFacet));
+const ImageTrackingSystem = ({
+  trackedImages,
+  setTrackedImages,
+}: {
+  trackedImages: TrackedImageComponent[];
+  setTrackedImages: (i: TrackedImageComponent[]) => void;
+}) => {
+  useQuery((e) => e.hasAll(TrackedImage), {
+    added: (e) => {
+      const v = e.current.get(TrackedImage)!;
+      const trackedImage = {
+        imageAsset: v.imageAsset!,
+        physicalWidthInMeters: v.physicalWidthInMeters!,
+      };
 
-  return useSystem((_: number) => {
-    query.loop([ThreeView, GLTFFacet], (_, [view, gltf]) => {
-      if (gltf.glTFModel && view.object3d.visible == false) {
-        view.object3d.copy(gltf.glTFModel.scene);
-        view.object3d.visible = true;
-      }
-    });
+      setTrackedImages([...trackedImages, trackedImage]);
+    },
   });
 };
 
@@ -195,20 +210,22 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
 
       setEntityData(entityData);
 
-      const loader = new GLTFLoader();
-      loader.load(
-        `${IPFS_GATEWAY_HOST}/ipfs/${entityData.glTFModel.toString()}`,
-        function (_gltf) {
-          setGltf(_gltf);
-        },
-        function (xhr) {
-          console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
-        },
-        function (error) {
-          console.error(error);
-          setGltf(null);
-        }
-      );
+      if (entityData.glTFModel) {
+        const loader = new GLTFLoader();
+        loader.load(
+          `${IPFS_GATEWAY_HOST}/ipfs/${entityData.glTFModel.toString()}`,
+          function (_gltf) {
+            setGltf(_gltf);
+          },
+          function (xhr) {
+            console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
+          },
+          function (error) {
+            console.error(error);
+            setGltf(null);
+          }
+        );
+      }
     }
 
     fetch();
@@ -242,17 +259,27 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
     );
   }
 
-  return gltf && entityData ? (
+  return entityData ? (
     <Entity>
-      {gltf ? <GLTFFacet glTFModel={gltf} /> : null}
       <CIDFacet cid={entityCID} />
-      <Position {...position} />
-      <Scale {...scale} />
-      <Rotation {...rotation} />
-      {entityData.parent ? <Parent parent={entityData.parent} /> : null}
-      <ThreeView>
-        <object3D matrixAutoUpdate={false} visible={false} />
-      </ThreeView>
+      {gltf ? (
+        <>
+          <GLTFFacet glTFModel={gltf} />
+          <Position {...position} />
+          <Scale {...scale} />
+          <Rotation {...rotation} />
+          {entityData.parent ? <Parent parent={entityData.parent} /> : null}
+          <ThreeView>
+            <object3D matrixAutoUpdate={false} visible={false} />
+          </ThreeView>
+        </>
+      ) : null}
+      {entityData.trackedImage ? (
+        <TrackedImage
+          imageAsset={entityData.trackedImage.imageAsset}
+          physicalWidthInMeters={entityData.trackedImage.physicalWidthInMeters}
+        />
+      ) : null}
     </Entity>
   ) : null;
 }
@@ -260,6 +287,12 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
 export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
   const ECS = useECS();
   useAnimationFrame(ECS.update);
+
+  const [trackedImages, setTrackedImages] = React.useState<
+    TrackedImageComponent[]
+  >([]);
+
+  // console.log(trackedImages);
 
   const [showWorld, setShowWorld] = React.useState(false);
 
@@ -274,6 +307,12 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
             // "anchors",
             // "plane-detection",
           ],
+          // trackedImages: [
+          //   {
+          //     image: imgBitmap,
+          //     widthInMeters: IMAGE_WIDTH,
+          //   },
+          // ],
         }}
       />
       <Canvas
@@ -294,6 +333,10 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
               <GLTFSystem />
               <TransformSystem />
               <ParentTransformSystem />
+              <ImageTrackingSystem
+                trackedImages={trackedImages}
+                setTrackedImages={setTrackedImages}
+              />
               {arPackage.map((entityCID) => {
                 return (
                   <Model
