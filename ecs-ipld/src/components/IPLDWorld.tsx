@@ -5,7 +5,12 @@ import type { IPFS } from "ipfs-core-types";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { GLTF } from "three/examples/jsm/loaders/GLTFLoader";
 import { default as axios } from "axios";
-import { useECS, useSystem, useQuery } from "@react-ecs/core";
+import {
+  useECS,
+  useSystem,
+  useQuery,
+  useAnimationFrame,
+} from "@react-ecs/core";
 import { ThreeView } from "@react-ecs/three";
 import { Entity, Facet } from "@react-ecs/core";
 import { Vector3, Quaternion } from "three";
@@ -45,7 +50,9 @@ class Anchor extends Facet<Anchor> {
   anchor?: CID = undefined;
 }
 
-class IsAnchor extends Facet<IsAnchor> {}
+class IsAnchor extends Facet<IsAnchor> {
+  xrAnchor?: XRAnchor = undefined;
+}
 
 class Visibility extends Facet<Visibility> {
   isVisible?: boolean = true;
@@ -86,6 +93,11 @@ type EntityData = {
   trackedImage?: TrackedImageComponent;
 };
 
+/*
+ * GLTFSystem
+ *
+ * GLTFFacet -> ThreeView
+ */
 const GLTFSystem = () => {
   useQuery((e) => e.hasAll(ThreeView, GLTFFacet), {
     added: (e) => {
@@ -101,6 +113,11 @@ const GLTFSystem = () => {
   return useSystem((_: number) => {});
 };
 
+/*
+ * AnchorTransformSystem
+ *
+ * Adjust position based on Anchor
+ */
 const AnchorTransformSystem = () => {
   const query = useQuery((e) => e.hasAll(Anchor, Position, Visibility));
   const anchorQuery = useQuery((e) => e.hasAll(IsAnchor, CIDFacet, Position));
@@ -114,6 +131,7 @@ const AnchorTransformSystem = () => {
         );
         if (anchorResult.length > 0) {
           const anchorPosition = anchorResult[0].get(Position);
+          const isAnchor = anchorResult[0].get(IsAnchor);
           if (anchorPosition) {
             const newPosition =
               anchorPosition.position?.clone() ??
@@ -121,7 +139,9 @@ const AnchorTransformSystem = () => {
             position.position = newPosition.add(position.startPosition);
           }
 
-          visibility.isVisible = true;
+          if (isAnchor?.xrAnchor) {
+            visibility.isVisible = true;
+          }
         } else {
           // Did not find anchor, mark not visible
           visibility.isVisible = false;
@@ -131,6 +151,11 @@ const AnchorTransformSystem = () => {
   });
 };
 
+/*
+ * TransformSystem
+ *
+ * Position, Rotation, Scale, Visibility -> ThreeView
+ */
 const TransformSystem = () => {
   const query = useQuery(
     (e) =>
@@ -160,6 +185,72 @@ const TransformSystem = () => {
   });
 };
 
+/*
+ * IsAnchorSystem
+ *
+ * IsAnchor -> WebXR anchor
+ */
+const IsAnchorSystem = ({
+  refSpace,
+}: {
+  refSpace: XRReferenceSpace | null;
+}) => {
+  const query = useQuery((e) => e.hasAll(IsAnchor));
+
+  useFrame((_1, _2, frame: XRFrame) => {
+    query.loop([IsAnchor], (e, [isAnchor]) => {
+      if (!refSpace) return;
+
+      const position = e.get(Position);
+      if (!position) {
+        e.add(Position);
+      }
+
+      if (!isAnchor.xrAnchor && !position?.position) {
+        // Create anchor at startPosition
+
+        if (!frame.createAnchor) return;
+
+        const pose = new XRRigidTransform({
+          x: position?.startPosition?.x ?? 0,
+          y: position?.startPosition?.y ?? 0,
+          z: position?.startPosition?.z ?? 0,
+          w: 1.0,
+        });
+
+        position!.position = position?.startPosition;
+
+        frame.createAnchor(pose, refSpace)?.then(
+          (anchor) => {
+            isAnchor.xrAnchor = anchor;
+          },
+          (error) => {
+            console.error("Could not create anchor: " + error);
+          }
+        );
+      } else if (isAnchor.xrAnchor) {
+        // Update position with anchor pose
+        const pose = frame.getPose(isAnchor.xrAnchor.anchorSpace, refSpace);
+
+        position!.position = pose
+          ? new Vector3(
+              pose.transform.position.x,
+              pose.transform.position.y,
+              pose.transform.position.z
+            )
+          : undefined;
+      }
+    });
+  });
+
+  return useSystem((_: number) => {});
+};
+
+/*
+ * ImageTrackingSystem
+ *
+ * setTrackedImages from TrackedImage
+ */
 const ImageTrackingSystem = ({
   trackedImages,
   setTrackedImages,
@@ -301,21 +392,30 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
 
 function IPLDWorldCanvas({ arPackage, ipfs }: IPLDSceneProps) {
   const ECS = useECS();
-  useFrame((_, delta, xrFrame) => {
-    ECS.update(delta);
-  });
+
+  useAnimationFrame(ECS.update);
 
   const [showWorld, setShowWorld] = React.useState(false);
+  const [refSpace, setRefSpace] = React.useState<XRReferenceSpace | null>(null);
+
+  function onSessionStart({ target }: { target: XRSession }) {
+    setShowWorld(true);
+
+    target.requestReferenceSpace("local").then((refSpace) => {
+      setRefSpace(refSpace);
+    });
+  }
 
   return (
     <ECS.Provider>
-      <XR referenceSpace="local" onSessionStart={() => setShowWorld(true)}>
+      <XR referenceSpace="local" onSessionStart={onSessionStart}>
         {showWorld ? (
           <>
             <hemisphereLight groundColor={0xbbbbff} position={[0.5, 1, 0.25]} />
             <GLTFSystem />
             <TransformSystem />
             <AnchorTransformSystem />
+            <IsAnchorSystem refSpace={refSpace} />
             {/* <ImageTrackingSystem
           trackedImages={trackedImages}
           setTrackedImages={setTrackedImages}
@@ -351,7 +451,7 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
             "local",
             "hit-test",
             // "image-tracking",
-            // "anchors",
+            "anchors",
             // "plane-detection",
           ],
           // trackedImages: [
