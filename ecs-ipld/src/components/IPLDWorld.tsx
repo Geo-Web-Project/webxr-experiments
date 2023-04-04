@@ -260,10 +260,12 @@ const ImageTrackingSystem = ({
   trackedImages,
   setTrackedImages,
   refSpace,
+  ipfs,
 }: {
   trackedImages: TrackedImageProps[] | null;
   setTrackedImages: (i: TrackedImageProps[]) => void;
   refSpace: XRReferenceSpace | null;
+  ipfs: IPFS;
 }) => {
   const query = useQuery((e) => e.hasAll(TrackedImage, Position), {
     added: (e) => {
@@ -271,21 +273,50 @@ const ImageTrackingSystem = ({
 
       // Download image asset
       (async () => {
-        console.debug(
-          `Fetching block from Web3.storage: ${v.imageAsset!.toString()}`
-        );
-        const carResponse = await axios.get(
-          `${IPFS_GATEWAY_HOST}/ipfs/${v.imageAsset!.toString()}?filename=img`,
-          {
-            responseType: "blob",
-            headers: { Accept: "application/vnd.ipld.raw" },
+        let catBlob: Blob;
+        try {
+          const imgData = ipfs.cat(v.imageAsset!);
+          let catBytes: Uint8Array[] = [];
+          for await (const bytes of imgData) {
+            catBytes = [...catBytes, bytes];
           }
-        );
-        const data = carResponse.data as Blob;
+          catBlob = new Blob(catBytes);
+        } catch (e) {
+          console.debug(
+            `Fetching CAR from Web3.storage: ${v.imageAsset!.toString()}`
+          );
+          const carResponse = await axios.get(
+            `https://w3s.link/ipfs/${v.imageAsset!.toString()}`,
+            {
+              responseType: "blob",
+              headers: { Accept: "application/vnd.ipld.car" },
+            }
+          );
+          console.debug(
+            `Importing CAR from Web3.storage: ${v.imageAsset!.toString()}`
+          );
+          const data = carResponse.data as Blob;
+          const buffer = await data.arrayBuffer();
+          const uintBuffer = new Uint8Array(buffer);
+
+          const reader = await CarReader.fromBytes(uintBuffer);
+          for await (const { bytes } of reader.blocks()) {
+            await ipfs.block.put(bytes);
+          }
+
+          const imgData = ipfs.cat(v.imageAsset!);
+          let catBytes: Uint8Array[] = [];
+          for await (const bytes of imgData) {
+            catBytes = [...catBytes, bytes];
+          }
+          catBlob = new Blob(catBytes);
+        }
+
+        console.log("FOUND: ", v.imageAsset!.toString());
 
         const trackedImage: TrackedImageProps = {
           widthInMeters: v.physicalWidthInMeters!,
-          image: await createImageBitmap(data),
+          image: await createImageBitmap(catBlob),
         };
         v.imageBitmap = trackedImage.image;
 
@@ -493,6 +524,7 @@ function IPLDWorldCanvas({
           trackedImages={trackedImages}
           setTrackedImages={setTrackedImages}
           refSpace={refSpace}
+          ipfs={ipfs}
         />
         {arPackage.map((entityCID) => {
           return (
