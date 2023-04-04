@@ -32,7 +32,7 @@ class GLTFFacet extends Facet<GLTFFacet> {
 }
 
 class Position extends Facet<Position> {
-  startPosition = new Vector3(0, 0, 0);
+  startPosition: Vector3 | null = new Vector3(0, 0, 0);
   position?: Vector3 = undefined;
 }
 
@@ -60,12 +60,16 @@ class Visibility extends Facet<Visibility> {
 
 class TrackedImage extends Facet<TrackedImage> {
   imageAsset?: CID = undefined;
+  imageBitmap?: ImageBitmap = undefined;
   physicalWidthInMeters?: number = undefined;
+  imageTrackingIndex?: number = undefined;
 }
 
-class TrackedImages extends Facet<TrackedImages> {
-  trackedImages: TrackedImageComponent[] = [];
-}
+type TrackedImageProps = {
+  image: ImageBitmap;
+  widthInMeters: number;
+};
+
 export type World = CID[];
 
 type VectorComponent = {
@@ -126,13 +130,15 @@ const AnchorTransformSystem = () => {
     query.loop(
       [Anchor, Position, Visibility],
       (_, [anchor, position, visibility]) => {
+        if (!position.startPosition) return;
+
         const anchorResult = anchorQuery.filter(
           (e) => e.get(CIDFacet)?.cid?.equals(anchor.anchor) ?? false
         );
         if (anchorResult.length > 0) {
           const anchorPosition = anchorResult[0].get(Position);
           const isAnchor = anchorResult[0].get(IsAnchor);
-          if (anchorPosition) {
+          if (anchorPosition && anchorPosition.startPosition) {
             const newPosition =
               anchorPosition.position?.clone() ??
               anchorPosition.startPosition.clone();
@@ -156,7 +162,7 @@ const AnchorTransformSystem = () => {
  *
  * Position, Rotation, Scale, Visibility -> ThreeView
  */
-const TransformSystem = () => {
+const TransformSystem = ({ showWorld }: { showWorld: boolean }) => {
   const query = useQuery(
     (e) =>
       e.hasAll(ThreeView) && e.hasAny(Position, Rotation, Scale, Visibility)
@@ -167,7 +173,7 @@ const TransformSystem = () => {
       [ThreeView, Position, Rotation, Scale, Visibility],
       (_, [view, position, rotation, scale, visibility]) => {
         const transform = view.ref.current!;
-        transform.visible = visibility.isVisible;
+        transform.visible = visibility.isVisible && showWorld;
         if (position) {
           transform.position.copy(position.position ?? position.startPosition);
         }
@@ -195,30 +201,29 @@ const IsAnchorSystem = ({
 }: {
   refSpace: XRReferenceSpace | null;
 }) => {
-  const query = useQuery((e) => e.hasAll(IsAnchor));
+  const query = useQuery((e) => e.hasAll(IsAnchor, Position));
 
   useFrame((_1, _2, frame: XRFrame) => {
-    query.loop([IsAnchor], (e, [isAnchor]) => {
+    if (!frame) return;
+
+    query.loop([IsAnchor, Position], (_, [isAnchor, position]) => {
       if (!refSpace) return;
 
-      const position = e.get(Position);
-      if (!position) {
-        e.add(Position);
-      }
+      if (!position.startPosition) return;
 
-      if (!isAnchor.xrAnchor && !position?.position) {
+      if (!isAnchor.xrAnchor && !position.position) {
         // Create anchor at startPosition
 
         if (!frame.createAnchor) return;
 
         const pose = new XRRigidTransform({
-          x: position?.startPosition?.x ?? 0,
-          y: position?.startPosition?.y ?? 0,
-          z: position?.startPosition?.z ?? 0,
+          x: position.startPosition.x ?? 0,
+          y: position.startPosition.y ?? 0,
+          z: position.startPosition.z ?? 0,
           w: 1.0,
         });
 
-        position!.position = position?.startPosition;
+        position.position = position.startPosition;
 
         frame.createAnchor(pose, refSpace)?.then(
           (anchor) => {
@@ -232,13 +237,13 @@ const IsAnchorSystem = ({
         // Update position with anchor pose
         const pose = frame.getPose(isAnchor.xrAnchor.anchorSpace, refSpace);
 
-        position!.position = pose
-          ? new Vector3(
-              pose.transform.position.x,
-              pose.transform.position.y,
-              pose.transform.position.z
-            )
-          : undefined;
+        if (pose) {
+          position.position = new Vector3(
+            pose.transform.position.x,
+            pose.transform.position.y,
+            pose.transform.position.z
+          );
+        }
       }
     });
   });
@@ -254,21 +259,73 @@ const IsAnchorSystem = ({
 const ImageTrackingSystem = ({
   trackedImages,
   setTrackedImages,
+  refSpace,
 }: {
-  trackedImages: TrackedImageComponent[];
-  setTrackedImages: (i: TrackedImageComponent[]) => void;
+  trackedImages: TrackedImageProps[] | null;
+  setTrackedImages: (i: TrackedImageProps[]) => void;
+  refSpace: XRReferenceSpace | null;
 }) => {
-  useQuery((e) => e.hasAll(TrackedImage), {
+  const query = useQuery((e) => e.hasAll(TrackedImage, Position), {
     added: (e) => {
       const v = e.current.get(TrackedImage)!;
-      const trackedImage = {
-        imageAsset: v.imageAsset!,
-        physicalWidthInMeters: v.physicalWidthInMeters!,
-      };
 
-      setTrackedImages([...trackedImages, trackedImage]);
+      // Download image asset
+      (async () => {
+        console.debug(
+          `Fetching block from Web3.storage: ${v.imageAsset!.toString()}`
+        );
+        const carResponse = await axios.get(
+          `${IPFS_GATEWAY_HOST}/ipfs/${v.imageAsset!.toString()}?filename=img`,
+          {
+            responseType: "blob",
+            headers: { Accept: "application/vnd.ipld.raw" },
+          }
+        );
+        const data = carResponse.data as Blob;
+
+        const trackedImage: TrackedImageProps = {
+          widthInMeters: v.physicalWidthInMeters!,
+          image: await createImageBitmap(data),
+        };
+        v.imageBitmap = trackedImage.image;
+
+        const newTrackedImages = [...(trackedImages ?? []), trackedImage];
+        setTrackedImages(newTrackedImages);
+
+        v.imageTrackingIndex = newTrackedImages.indexOf(trackedImage);
+      })();
     },
   });
+
+  useFrame((_1, _2, frame: any) => {
+    if (!frame) return;
+
+    const imageTrackingResults: any[] = frame.getImageTrackingResults();
+
+    query.loop([TrackedImage, Position], (_, [trackedImage, position]) => {
+      if (trackedImage.imageTrackingIndex === undefined) return;
+
+      const result = imageTrackingResults.find(
+        (v) => v.index === trackedImage.imageTrackingIndex
+      );
+
+      if (!result) return;
+
+      const pose = frame.getPose(result.imageSpace, refSpace);
+      const state = result.trackingState;
+
+      if (state == "tracked" || state == "emulated") {
+        // Start position is updated as image is tracked. NOTE: anchor is currently only created once based on initial startPosition
+        position.startPosition = new Vector3(
+          pose.transform.position.x,
+          pose.transform.position.y,
+          pose.transform.position.z
+        );
+      }
+    });
+  });
+
+  return useSystem((_: number) => {});
 };
 
 function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
@@ -381,16 +438,34 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
       {entityData.anchor ? <Anchor anchor={entityData.anchor} /> : null}
       {entityData.isAnchor ? <IsAnchor /> : null}
       {entityData.trackedImage ? (
-        <TrackedImage
-          imageAsset={entityData.trackedImage.imageAsset}
-          physicalWidthInMeters={entityData.trackedImage.physicalWidthInMeters}
-        />
+        <>
+          <TrackedImage
+            imageAsset={entityData.trackedImage.imageAsset}
+            physicalWidthInMeters={
+              entityData.trackedImage.physicalWidthInMeters
+            }
+          />
+          <Position
+            {...position}
+            startPosition={position.startPosition ?? null}
+          />
+        </>
       ) : null}
     </Entity>
   ) : null;
 }
 
-function IPLDWorldCanvas({ arPackage, ipfs }: IPLDSceneProps) {
+type IPLDWorldCanvasProps = IPLDSceneProps & {
+  trackedImages: TrackedImageProps[] | null;
+  setTrackedImages: (i: TrackedImageProps[]) => void;
+};
+
+function IPLDWorldCanvas({
+  arPackage,
+  ipfs,
+  trackedImages,
+  setTrackedImages,
+}: IPLDWorldCanvasProps) {
   const ECS = useECS();
 
   useAnimationFrame(ECS.update);
@@ -409,59 +484,52 @@ function IPLDWorldCanvas({ arPackage, ipfs }: IPLDSceneProps) {
   return (
     <ECS.Provider>
       <XR referenceSpace="local" onSessionStart={onSessionStart}>
-        {showWorld ? (
-          <>
-            <hemisphereLight groundColor={0xbbbbff} position={[0.5, 1, 0.25]} />
-            <GLTFSystem />
-            <TransformSystem />
-            <AnchorTransformSystem />
-            <IsAnchorSystem refSpace={refSpace} />
-            {/* <ImageTrackingSystem
+        <hemisphereLight groundColor={0xbbbbff} position={[0.5, 1, 0.25]} />
+        <GLTFSystem />
+        <TransformSystem showWorld={showWorld} />
+        <AnchorTransformSystem />
+        <IsAnchorSystem refSpace={refSpace} />
+        <ImageTrackingSystem
           trackedImages={trackedImages}
           setTrackedImages={setTrackedImages}
-        /> */}
-            {arPackage.map((entityCID) => {
-              return (
-                <Model
-                  key={entityCID.toString()}
-                  entityCID={entityCID}
-                  ipfs={ipfs}
-                />
-              );
-            })}
-          </>
-        ) : null}
+          refSpace={refSpace}
+        />
+        {arPackage.map((entityCID) => {
+          return (
+            <Model
+              key={entityCID.toString()}
+              entityCID={entityCID}
+              ipfs={ipfs}
+            />
+          );
+        })}
       </XR>
     </ECS.Provider>
   );
 }
 
 export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
-  const [trackedImages, setTrackedImages] = React.useState<
-    TrackedImageComponent[]
-  >([]);
-
-  // console.log(trackedImages);
+  const [trackedImages, setTrackedImages] =
+    React.useState<TrackedImageProps[] | null>(null);
 
   return (
     <>
-      <ARButton
-        sessionInit={{
-          requiredFeatures: [
-            "local",
-            "hit-test",
-            // "image-tracking",
-            "anchors",
-            // "plane-detection",
-          ],
-          // trackedImages: [
-          //   {
-          //     image: imgBitmap,
-          //     widthInMeters: IMAGE_WIDTH,
-          //   },
-          // ],
-        }}
-      />
+      {trackedImages ? (
+        <ARButton
+          sessionInit={
+            {
+              requiredFeatures: [
+                "local",
+                "hit-test",
+                "image-tracking",
+                "anchors",
+                // "plane-detection",
+              ],
+              trackedImages: trackedImages,
+            } as any
+          }
+        />
+      ) : null}
       <Canvas
         camera={{
           fov: 70,
@@ -470,7 +538,12 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
           far: 20,
         }}
       >
-        <IPLDWorldCanvas ipfs={ipfs} arPackage={arPackage} />
+        <IPLDWorldCanvas
+          ipfs={ipfs}
+          arPackage={arPackage}
+          trackedImages={trackedImages}
+          setTrackedImages={setTrackedImages}
+        />
       </Canvas>
     </>
   );

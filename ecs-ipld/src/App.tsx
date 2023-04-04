@@ -5,7 +5,7 @@ import { default as axios } from "axios";
 import { CID } from "multiformats/cid";
 import { CarReader } from "@ipld/car/reader";
 
-export const IPFS_GATEWAY_HOST = "https://dweb.link";
+export const IPFS_GATEWAY_HOST = "https://w3s.link";
 
 function App({ ipfsP }: { ipfsP: any }) {
   const { hash } = window.location;
