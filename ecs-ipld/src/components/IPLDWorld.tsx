@@ -42,7 +42,7 @@ class Scale extends Facet<Scale> {
 }
 
 class Rotation extends Facet<Rotation> {
-  startRotation = new Quaternion(0, 0, 0, 0);
+  startRotation: Quaternion | null = new Quaternion(0, 0, 0, 0);
   rotation?: Quaternion = undefined;
 }
 
@@ -123,26 +123,45 @@ const GLTFSystem = () => {
  * Adjust position based on Anchor
  */
 const AnchorTransformSystem = () => {
-  const query = useQuery((e) => e.hasAll(Anchor, Position, Visibility));
-  const anchorQuery = useQuery((e) => e.hasAll(IsAnchor, CIDFacet, Position));
+  const query = useQuery((e) =>
+    e.hasAll(Anchor, Position, Rotation, Visibility)
+  );
+  const anchorQuery = useQuery((e) =>
+    e.hasAll(IsAnchor, CIDFacet, Position, Rotation)
+  );
 
   return useSystem((_: number) => {
     query.loop(
-      [Anchor, Position, Visibility],
-      (_, [anchor, position, visibility]) => {
+      [Anchor, Position, Rotation, Visibility],
+      (_, [anchor, position, rotation, visibility]) => {
         if (!position.startPosition) return;
+        if (!rotation.startRotation) return;
 
         const anchorResult = anchorQuery.filter(
           (e) => e.get(CIDFacet)?.cid?.equals(anchor.anchor) ?? false
         );
         if (anchorResult.length > 0) {
           const anchorPosition = anchorResult[0].get(Position);
+          const anchorRotation = anchorResult[0].get(Rotation);
+
           const isAnchor = anchorResult[0].get(IsAnchor);
           if (anchorPosition && anchorPosition.startPosition) {
             const newPosition =
               anchorPosition.position?.clone() ??
               anchorPosition.startPosition.clone();
             position.position = newPosition.add(position.startPosition);
+          }
+
+          if (anchorRotation && anchorRotation.startRotation) {
+            const newRotation =
+              anchorRotation.rotation?.clone() ??
+              anchorRotation.startRotation.clone();
+            rotation.rotation = new Quaternion(
+              newRotation.x + rotation.startRotation.x,
+              newRotation.y + rotation.startRotation.y,
+              newRotation.z + rotation.startRotation.z,
+              newRotation.w + rotation.startRotation.w
+            );
           }
 
           if (isAnchor?.xrAnchor) {
@@ -201,51 +220,71 @@ const IsAnchorSystem = ({
 }: {
   refSpace: XRReferenceSpace | null;
 }) => {
-  const query = useQuery((e) => e.hasAll(IsAnchor, Position));
+  const query = useQuery((e) => e.hasAll(IsAnchor, Position, Rotation));
 
   useFrame((_1, _2, frame: XRFrame) => {
     if (!frame) return;
 
-    query.loop([IsAnchor, Position], (_, [isAnchor, position]) => {
-      if (!refSpace) return;
+    query.loop(
+      [IsAnchor, Position, Rotation],
+      (_, [isAnchor, position, rotation]) => {
+        if (!refSpace) return;
 
-      if (!position.startPosition) return;
+        if (!position.startPosition) return;
+        if (!rotation.startRotation) return;
 
-      if (!isAnchor.xrAnchor && !position.position) {
-        // Create anchor at startPosition
+        if (!isAnchor.xrAnchor && !position.position && !rotation.rotation) {
+          // Create anchor at startPosition
 
-        if (!frame.createAnchor) return;
+          if (!frame.createAnchor) return;
 
-        const pose = new XRRigidTransform({
-          x: position.startPosition.x ?? 0,
-          y: position.startPosition.y ?? 0,
-          z: position.startPosition.z ?? 0,
-          w: 1.0,
-        });
-
-        position.position = position.startPosition;
-
-        frame.createAnchor(pose, refSpace)?.then(
-          (anchor) => {
-            isAnchor.xrAnchor = anchor;
-          },
-          (error) => {
-            console.error("Could not create anchor: " + error);
-          }
-        );
-      } else if (isAnchor.xrAnchor) {
-        // Update position with anchor pose
-        const pose = frame.getPose(isAnchor.xrAnchor.anchorSpace, refSpace);
-
-        if (pose) {
-          position.position = new Vector3(
-            pose.transform.position.x,
-            pose.transform.position.y,
-            pose.transform.position.z
+          const pose = new XRRigidTransform(
+            {
+              x: position.startPosition.x ?? 0,
+              y: position.startPosition.y ?? 0,
+              z: position.startPosition.z ?? 0,
+              w: 1.0,
+            },
+            {
+              w: rotation.startRotation.w ?? 1.0,
+              x: rotation.startRotation.x ?? 0,
+              y: rotation.startRotation.y ?? 0,
+              z: rotation.startRotation.z ?? 0,
+            }
           );
+
+          position.position = position.startPosition;
+          rotation.rotation = rotation.startRotation;
+
+          frame.createAnchor(pose, refSpace)?.then(
+            (anchor) => {
+              console.debug("Created anchor: ", pose);
+              isAnchor.xrAnchor = anchor;
+            },
+            (error) => {
+              console.error("Could not create anchor: " + error);
+            }
+          );
+        } else if (isAnchor.xrAnchor) {
+          // Update position with anchor pose
+          const pose = frame.getPose(isAnchor.xrAnchor.anchorSpace, refSpace);
+
+          if (pose) {
+            position.position = new Vector3(
+              pose.transform.position.x,
+              pose.transform.position.y,
+              pose.transform.position.z
+            );
+            rotation.rotation = new Quaternion(
+              pose.transform.orientation.x,
+              pose.transform.orientation.y,
+              pose.transform.orientation.z,
+              pose.transform.orientation.w
+            );
+          }
         }
       }
-    });
+    );
   });
 
   return useSystem((_: number) => {});
@@ -267,7 +306,7 @@ const ImageTrackingSystem = ({
   refSpace: XRReferenceSpace | null;
   ipfs: IPFS;
 }) => {
-  const query = useQuery((e) => e.hasAll(TrackedImage, Position), {
+  const query = useQuery((e) => e.hasAll(TrackedImage, Position, Rotation), {
     added: (e) => {
       const v = e.current.get(TrackedImage)!;
 
@@ -333,27 +372,37 @@ const ImageTrackingSystem = ({
 
     const imageTrackingResults: any[] = frame.getImageTrackingResults();
 
-    query.loop([TrackedImage, Position], (_, [trackedImage, position]) => {
-      if (trackedImage.imageTrackingIndex === undefined) return;
+    query.loop(
+      [TrackedImage, Position, Rotation],
+      (_, [trackedImage, position, rotation]) => {
+        if (trackedImage.imageTrackingIndex === undefined) return;
 
-      const result = imageTrackingResults.find(
-        (v) => v.index === trackedImage.imageTrackingIndex
-      );
-
-      if (!result) return;
-
-      const pose = frame.getPose(result.imageSpace, refSpace);
-      const state = result.trackingState;
-
-      if (state == "tracked" || state == "emulated") {
-        // Start position is updated as image is tracked. NOTE: anchor is currently only created once based on initial startPosition
-        position.startPosition = new Vector3(
-          pose.transform.position.x,
-          pose.transform.position.y,
-          pose.transform.position.z
+        const result = imageTrackingResults.find(
+          (v) => v.index === trackedImage.imageTrackingIndex
         );
+
+        if (!result) return;
+
+        const pose = frame.getPose(result.imageSpace, refSpace);
+        const state = result.trackingState;
+
+        if (state == "tracked" || state == "emulated") {
+          // Start position is updated as image is tracked. NOTE: anchor is currently only created once based on initial startPosition
+          position.startPosition = new Vector3(
+            pose.transform.position.x,
+            pose.transform.position.y,
+            pose.transform.position.z
+          );
+
+          rotation.startRotation = new Quaternion(
+            pose.transform.orientation.x,
+            pose.transform.orientation.y,
+            pose.transform.orientation.z,
+            pose.transform.orientation.w
+          );
+        }
       }
-    });
+    );
   });
 
   return useSystem((_: number) => {});
@@ -458,16 +507,23 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
         <>
           <GLTFFacet glTFModel={gltf} />
           <Visibility isVisible={false} />
+          <Scale {...scale} />
+          <Rotation {...rotation} />
+          <Position {...position} />
           <ThreeView>
             <object3D matrixAutoUpdate={false} visible={false} />
           </ThreeView>
         </>
       ) : null}
-      {entityData.scale ? <Scale {...scale} /> : null}
-      {entityData.rotation ? <Rotation {...rotation} /> : null}
-      {entityData.position ? <Position {...position} /> : null}
       {entityData.anchor ? <Anchor anchor={entityData.anchor} /> : null}
-      {entityData.isAnchor ? <IsAnchor /> : null}
+      {entityData.isAnchor ? (
+        <>
+          <IsAnchor />
+          {entityData.scale ? <Scale {...scale} /> : null}
+          {entityData.rotation ? <Rotation {...rotation} /> : null}
+          {entityData.position ? <Position {...position} /> : null}
+        </>
+      ) : null}
       {entityData.trackedImage ? (
         <>
           <TrackedImage
@@ -479,6 +535,10 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           <Position
             {...position}
             startPosition={position.startPosition ?? null}
+          />
+          <Rotation
+            {...rotation}
+            startRotation={rotation.startRotation ?? null}
           />
         </>
       ) : null}
