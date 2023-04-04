@@ -5,17 +5,11 @@ import type { IPFS } from "ipfs-core-types";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { GLTF } from "three/examples/jsm/loaders/GLTFLoader";
 import { default as axios } from "axios";
-import {
-  useECS,
-  useSystem,
-  useQuery,
-  useAnimationFrame,
-} from "@react-ecs/core";
+import { useECS, useSystem, useQuery } from "@react-ecs/core";
 import { ThreeView } from "@react-ecs/three";
 import { Entity, Facet } from "@react-ecs/core";
-import { Entity as TickEntity } from "tick-knock";
 import { Vector3, Quaternion } from "three";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
 import { CarReader } from "@ipld/car/reader";
 
@@ -47,8 +41,14 @@ class Rotation extends Facet<Rotation> {
   rotation?: Quaternion = undefined;
 }
 
-class Parent extends Facet<Parent> {
-  parent?: CID = undefined;
+class Anchor extends Facet<Anchor> {
+  anchor?: CID = undefined;
+}
+
+class IsAnchor extends Facet<IsAnchor> {}
+
+class Visibility extends Facet<Visibility> {
+  isVisible?: boolean = true;
 }
 
 class TrackedImage extends Facet<TrackedImage> {
@@ -81,55 +81,68 @@ type EntityData = {
   position?: VectorComponent;
   scale?: VectorComponent;
   rotation?: QuaternionComponent;
-  parent?: CID;
+  anchor?: CID;
+  isAnchor?: Boolean;
   trackedImage?: TrackedImageComponent;
 };
 
 const GLTFSystem = () => {
-  const query = useQuery((e) => e.hasAll(ThreeView, GLTFFacet));
+  useQuery((e) => e.hasAll(ThreeView, GLTFFacet), {
+    added: (e) => {
+      const gltf = e.current.get(GLTFFacet)!;
+      const view = e.current.get(ThreeView)!;
 
-  return useSystem((_: number) => {
-    query.loop([ThreeView, GLTFFacet], (_, [view, gltf]) => {
-      if (gltf.glTFModel && view.object3d.visible == false) {
+      if (gltf.glTFModel) {
         view.object3d.copy(gltf.glTFModel.scene);
-        view.object3d.visible = true;
       }
-    });
+    },
   });
+
+  return useSystem((_: number) => {});
 };
 
-const ParentTransformSystem = () => {
-  const query = useQuery((e) => e.hasAll(Parent, Position));
-  const parentQuery = useQuery((e) => e.hasAll(CIDFacet, Position));
+const AnchorTransformSystem = () => {
+  const query = useQuery((e) => e.hasAll(Anchor, Position, Visibility));
+  const anchorQuery = useQuery((e) => e.hasAll(IsAnchor, CIDFacet, Position));
 
   return useSystem((_: number) => {
-    query.loop([Parent, Position], (_, [parent, position]) => {
-      const parentResult = parentQuery.filter(
-        (e) => e.get(CIDFacet)?.cid?.equals(parent.parent) ?? false
-      );
-      if (parentResult.length > 0) {
-        const parentPosition = parentResult[0].get(Position);
-        if (parentPosition) {
-          const newPosition =
-            parentPosition.position?.clone() ??
-            parentPosition.startPosition.clone();
-          position.position = newPosition.add(position.startPosition);
+    query.loop(
+      [Anchor, Position, Visibility],
+      (_, [anchor, position, visibility]) => {
+        const anchorResult = anchorQuery.filter(
+          (e) => e.get(CIDFacet)?.cid?.equals(anchor.anchor) ?? false
+        );
+        if (anchorResult.length > 0) {
+          const anchorPosition = anchorResult[0].get(Position);
+          if (anchorPosition) {
+            const newPosition =
+              anchorPosition.position?.clone() ??
+              anchorPosition.startPosition.clone();
+            position.position = newPosition.add(position.startPosition);
+          }
+
+          visibility.isVisible = true;
+        } else {
+          // Did not find anchor, mark not visible
+          visibility.isVisible = false;
         }
       }
-    });
+    );
   });
 };
 
 const TransformSystem = () => {
   const query = useQuery(
-    (e) => e.hasAll(ThreeView) && e.hasAny(Position, Rotation, Scale)
+    (e) =>
+      e.hasAll(ThreeView) && e.hasAny(Position, Rotation, Scale, Visibility)
   );
 
   return useSystem((_: number) => {
     query.loop(
-      [ThreeView, Position, Rotation, Scale],
-      (_, [view, position, rotation, scale]) => {
+      [ThreeView, Position, Rotation, Scale, Visibility],
+      (_, [view, position, rotation, scale, visibility]) => {
         const transform = view.ref.current!;
+        transform.visible = visibility.isVisible;
         if (position) {
           transform.position.copy(position.position ?? position.startPosition);
         }
@@ -265,15 +278,17 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
       {gltf ? (
         <>
           <GLTFFacet glTFModel={gltf} />
-          <Position {...position} />
-          <Scale {...scale} />
-          <Rotation {...rotation} />
-          {entityData.parent ? <Parent parent={entityData.parent} /> : null}
+          <Visibility isVisible={false} />
           <ThreeView>
             <object3D matrixAutoUpdate={false} visible={false} />
           </ThreeView>
         </>
       ) : null}
+      {entityData.scale ? <Scale {...scale} /> : null}
+      {entityData.rotation ? <Rotation {...rotation} /> : null}
+      {entityData.position ? <Position {...position} /> : null}
+      {entityData.anchor ? <Anchor anchor={entityData.anchor} /> : null}
+      {entityData.isAnchor ? <IsAnchor /> : null}
       {entityData.trackedImage ? (
         <TrackedImage
           imageAsset={entityData.trackedImage.imageAsset}
@@ -284,20 +299,52 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
   ) : null;
 }
 
-export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
+function IPLDWorldCanvas({ arPackage, ipfs }: IPLDSceneProps) {
   const ECS = useECS();
-  useAnimationFrame(ECS.update);
+  useFrame((_, delta, xrFrame) => {
+    ECS.update(delta);
+  });
 
+  const [showWorld, setShowWorld] = React.useState(false);
+
+  return (
+    <ECS.Provider>
+      <XR referenceSpace="local" onSessionStart={() => setShowWorld(true)}>
+        {showWorld ? (
+          <>
+            <hemisphereLight groundColor={0xbbbbff} position={[0.5, 1, 0.25]} />
+            <GLTFSystem />
+            <TransformSystem />
+            <AnchorTransformSystem />
+            {/* <ImageTrackingSystem
+          trackedImages={trackedImages}
+          setTrackedImages={setTrackedImages}
+        /> */}
+            {arPackage.map((entityCID) => {
+              return (
+                <Model
+                  key={entityCID.toString()}
+                  entityCID={entityCID}
+                  ipfs={ipfs}
+                />
+              );
+            })}
+          </>
+        ) : null}
+      </XR>
+    </ECS.Provider>
+  );
+}
+
+export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
   const [trackedImages, setTrackedImages] = React.useState<
     TrackedImageComponent[]
   >([]);
 
   // console.log(trackedImages);
 
-  const [showWorld, setShowWorld] = React.useState(false);
-
   return (
-    <ECS.Provider>
+    <>
       <ARButton
         sessionInit={{
           requiredFeatures: [
@@ -323,33 +370,8 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
           far: 20,
         }}
       >
-        <XR referenceSpace="local" onSessionStart={() => setShowWorld(true)}>
-          {showWorld ? (
-            <>
-              <hemisphereLight
-                groundColor={0xbbbbff}
-                position={[0.5, 1, 0.25]}
-              />
-              <GLTFSystem />
-              <TransformSystem />
-              <ParentTransformSystem />
-              <ImageTrackingSystem
-                trackedImages={trackedImages}
-                setTrackedImages={setTrackedImages}
-              />
-              {arPackage.map((entityCID) => {
-                return (
-                  <Model
-                    key={entityCID.toString()}
-                    entityCID={entityCID}
-                    ipfs={ipfs}
-                  />
-                );
-              })}
-            </>
-          ) : null}
-        </XR>
+        <IPLDWorldCanvas ipfs={ipfs} arPackage={arPackage} />
       </Canvas>
-    </ECS.Provider>
+    </>
   );
 }
