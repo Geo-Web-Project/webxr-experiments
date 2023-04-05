@@ -47,7 +47,14 @@ class Rotation extends Facet<Rotation> {
 }
 
 class Anchor extends Facet<Anchor> {
-  anchor?: CID = undefined;
+  positionX?: CID = undefined;
+  positionY?: CID = undefined;
+  positionZ?: CID = undefined;
+
+  rotationX?: CID = undefined;
+  rotationY?: CID = undefined;
+  rotationZ?: CID = undefined;
+  rotationW?: CID = undefined;
 }
 
 class IsAnchor extends Facet<IsAnchor> {
@@ -73,15 +80,15 @@ type TrackedImageProps = {
 export type World = CID[];
 
 type VectorComponent = {
-  x: number;
-  y: number;
-  z: number;
+  x: { value: number; anchor?: CID };
+  y: { value: number; anchor?: CID };
+  z: { value: number; anchor?: CID };
 };
 type QuaternionComponent = {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
+  x: { value: number; anchor?: CID };
+  y: { value: number; anchor?: CID };
+  z: { value: number; anchor?: CID };
+  w: { value: number; anchor?: CID };
 };
 type TrackedImageComponent = {
   imageAsset?: CID;
@@ -92,7 +99,6 @@ type EntityData = {
   position?: VectorComponent;
   scale?: VectorComponent;
   rotation?: QuaternionComponent;
-  anchor?: CID;
   isAnchor?: Boolean;
   trackedImage?: TrackedImageComponent;
 };
@@ -137,34 +143,82 @@ const AnchorTransformSystem = () => {
         if (!position.startPosition) return;
         if (!rotation.startRotation) return;
 
-        const anchorResult = anchorQuery.filter(
-          (e) => e.get(CIDFacet)?.cid?.equals(anchor.anchor) ?? false
-        );
-        if (anchorResult.length > 0) {
-          const anchorPosition = anchorResult[0].get(Position);
-          const anchorRotation = anchorResult[0].get(Rotation);
+        const getAnchor = (anchorCID: CID) => {
+          const results = anchorQuery.filter(
+            (e) => e.get(CIDFacet)?.cid?.equals(anchorCID) ?? false
+          );
 
-          const isAnchor = anchorResult[0].get(IsAnchor);
-          if (anchorPosition && anchorPosition.startPosition) {
-            const newPosition =
-              anchorPosition.position?.clone() ??
-              anchorPosition.startPosition.clone();
-            position.position = newPosition.add(position.startPosition);
-          }
+          return results.length > 0 ? results[0] : null;
+        };
 
-          if (anchorRotation && anchorRotation.startRotation) {
-            const newRotation =
-              anchorRotation.rotation?.clone() ??
-              anchorRotation.startRotation.clone();
-            rotation.rotation = new Quaternion(
-              newRotation.x + rotation.startRotation.x,
-              newRotation.y + rotation.startRotation.y,
-              newRotation.z + rotation.startRotation.z,
-              newRotation.w + rotation.startRotation.w
+        const anchorPositionX = getAnchor(anchor.positionX);
+        const anchorPositionY = getAnchor(anchor.positionY);
+        const anchorPositionZ = getAnchor(anchor.positionZ);
+
+        const anchorRotationX = getAnchor(anchor.rotationX);
+        const anchorRotationY = getAnchor(anchor.rotationY);
+        const anchorRotationZ = getAnchor(anchor.rotationZ);
+        const anchorRotationW = getAnchor(anchor.rotationW);
+
+        if (
+          anchorPositionX ||
+          anchorPositionY ||
+          anchorPositionZ ||
+          anchorRotationX ||
+          anchorRotationY ||
+          anchorRotationZ ||
+          anchorRotationW
+        ) {
+          const newPosition = new Vector3(
+            anchorPositionX?.get(Position)?.position?.x ??
+              anchorPositionX?.get(Position)?.startPosition?.x ??
+              0,
+            anchorPositionY?.get(Position)?.position?.y ??
+              anchorPositionY?.get(Position)?.startPosition?.y ??
+              0,
+            anchorPositionZ?.get(Position)?.position?.z ??
+              anchorPositionZ?.get(Position)?.startPosition?.z ??
+              0
+          );
+
+          const newRotation = new Quaternion(
+            anchorRotationX?.get(Rotation)?.rotation?.x ??
+              anchorRotationX?.get(Rotation)?.startRotation?.x ??
+              0,
+            anchorRotationY?.get(Rotation)?.rotation?.y ??
+              anchorRotationY?.get(Rotation)?.startRotation?.y ??
+              0,
+            anchorRotationZ?.get(Rotation)?.rotation?.z ??
+              anchorRotationZ?.get(Rotation)?.startRotation?.z ??
+              0,
+            anchorRotationW?.get(Rotation)?.rotation?.w ??
+              anchorRotationW?.get(Rotation)?.startRotation?.w ??
+              0
+          );
+
+          position.position = newPosition.add(position.startPosition);
+          rotation.rotation = new Quaternion(
+            newRotation.x + rotation.startRotation.x,
+            newRotation.y + rotation.startRotation.y,
+            newRotation.z + rotation.startRotation.z,
+            newRotation.w + rotation.startRotation.w
+          );
+
+          const shouldShow = [
+            anchorPositionX,
+            anchorPositionY,
+            anchorPositionZ,
+            anchorRotationX,
+            anchorRotationY,
+            anchorRotationZ,
+            anchorRotationW,
+          ].reduce((prev, cur) => {
+            return (
+              prev && (cur ? cur.get(IsAnchor)?.xrAnchor !== undefined : true)
             );
-          }
+          }, true);
 
-          if (isAnchor?.xrAnchor) {
+          if (shouldShow) {
             visibility.isVisible = true;
           }
         } else {
@@ -294,6 +348,7 @@ const IsAnchorSystem = ({
  * ImageTrackingSystem
  *
  * setTrackedImages from TrackedImage
+ * Update startPosition and startRotation based on physical location in XR view
  */
 const ImageTrackingSystem = ({
   trackedImages,
@@ -314,6 +369,8 @@ const ImageTrackingSystem = ({
       (async () => {
         let catBlob: Blob;
         try {
+          await ipfs.block.get(v.imageAsset!, { timeout: 2000 });
+
           const imgData = ipfs.cat(v.imageAsset!);
           let catBytes: Uint8Array[] = [];
           for await (const bytes of imgData) {
@@ -473,32 +530,42 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
   }, []);
 
   let position: any = {};
+
   if (entityData && entityData.position) {
     position["startPosition"] = new Vector3(
-      entityData.position.x,
-      entityData.position.y,
-      entityData.position.z
+      entityData.position.x.value,
+      entityData.position.y.value,
+      entityData.position.z.value
     );
   }
 
   let scale: any = {};
   if (entityData && entityData.scale) {
     scale["startScale"] = new Vector3(
-      entityData.scale.x,
-      entityData.scale.y,
-      entityData.scale.z
+      entityData.scale.x.value,
+      entityData.scale.y.value,
+      entityData.scale.z.value
     );
   }
 
   let rotation: any = {};
   if (entityData && entityData.rotation) {
     rotation["startRotation"] = new Quaternion(
-      entityData.rotation.x,
-      entityData.rotation.y,
-      entityData.rotation.z,
-      entityData.rotation.w
+      entityData.rotation.x.value,
+      entityData.rotation.y.value,
+      entityData.rotation.z.value,
+      entityData.rotation.w.value
     );
   }
+
+  const hasAnchor =
+    entityData?.position?.x?.anchor !== undefined ||
+    entityData?.position?.y?.anchor !== undefined ||
+    entityData?.position?.z?.anchor !== undefined ||
+    entityData?.rotation?.x?.anchor !== undefined ||
+    entityData?.rotation?.y?.anchor !== undefined ||
+    entityData?.rotation?.z?.anchor !== undefined ||
+    entityData?.rotation?.w?.anchor !== undefined;
 
   return entityData ? (
     <Entity>
@@ -515,7 +582,17 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           </ThreeView>
         </>
       ) : null}
-      {entityData.anchor ? <Anchor anchor={entityData.anchor} /> : null}
+      {hasAnchor ? (
+        <Anchor
+          positionX={entityData.position?.x?.anchor}
+          positionY={entityData.position?.y?.anchor}
+          positionZ={entityData.position?.z?.anchor}
+          rotationX={entityData.rotation?.x?.anchor}
+          rotationY={entityData.rotation?.y?.anchor}
+          rotationZ={entityData.rotation?.z?.anchor}
+          rotationW={entityData.rotation?.w?.anchor}
+        />
+      ) : null}
       {entityData.isAnchor ? (
         <>
           <IsAnchor />

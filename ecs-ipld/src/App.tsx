@@ -47,9 +47,12 @@ function App({ ipfsP }: { ipfsP: any }) {
         const uintBuffer = new Uint8Array(buffer);
 
         const reader = await CarReader.fromBytes(uintBuffer);
-        const block = await reader.get(CID.parse(rootCIDStr));
-        const putRes = await ipfs.block.put(block!.bytes);
-        console.debug(`Imported CAR from Web3.storage: ${putRes.toString()}`);
+        for await (const { bytes } of reader.blocks()) {
+          const putRes = await ipfs.block.put(bytes);
+          console.debug(
+            `Imported block from Web3.storage: ${putRes.toString()}`
+          );
+        }
 
         result = await ipfs.dag.get(CID.parse(rootCIDStr));
       }

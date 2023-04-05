@@ -1,9 +1,0 @@
-{
-  "position": { "x": 0, "y": 0, "z": 0 },
-  "scale": { "x": 2, "y": 2, "z": 2 },
-  "rotation": { "x": 0, "y": 0.7071067, "z": 0, "w": 0.7071069 },
-  "glTFModel": { "/": "QmRh7FTaB3AdX2x29BG7PbMUedhZQmo3xfLnxV2U61BcCU" },
-  "anchor": {
-    "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
-  }
-}
