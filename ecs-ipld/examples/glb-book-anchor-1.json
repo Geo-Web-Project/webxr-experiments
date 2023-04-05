@@ -1,0 +1,16 @@
+{
+  "position": {
+    "x": 0,
+    "y": 0,
+    "z": -1
+  },
+  "anchor": {
+    "position": {
+      "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
+    },
+    "rotation": {
+      "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
+    }
+  },
+  "glTFModel": { "/": "QmRh7FTaB3AdX2x29BG7PbMUedhZQmo3xfLnxV2U61BcCU" }
+}

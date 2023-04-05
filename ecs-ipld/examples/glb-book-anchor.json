@@ -1,0 +1,12 @@
+{
+  "position": {
+    "x": 0,
+    "y": 0,
+    "z": -1
+  },
+  "scale": { "x": 1, "y": 1, "z": 1 },
+  "anchor": {
+    "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
+  },
+  "glTFModel": { "/": "QmRh7FTaB3AdX2x29BG7PbMUedhZQmo3xfLnxV2U61BcCU" }
+}
