@@ -2,33 +2,23 @@
   "position": {
     "x": 0,
     "y": 0,
-    "z": -1
+    "z": 1
   },
+  "scale": { "x": 2, "y": 2, "z": 2 },
   "anchor": {
     "position": {
       "x": {
         "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
       },
       "y": {
-        "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
+        "/": "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
       },
       "z": {
         "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
       }
     },
     "rotation": {
-      "x": {
-        "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
-      },
-      "y": {
-        "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
-      },
-      "z": {
-        "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
-      },
-      "w": {
-        "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
-      }
+      "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
     }
   },
   "glTFModel": { "/": "QmRh7FTaB3AdX2x29BG7PbMUedhZQmo3xfLnxV2U61BcCU" }

@@ -14,14 +14,14 @@ const root = ReactDOM.createRoot(
 
 const ipfsP = getIpfs({
   providers: [
-    httpClient({
-      loadHttpClientModule: () => IPFSHttpClient,
-      apiAddress: "/ip4/127.0.0.1/tcp/5001",
-    }),
-    httpClient({
-      loadHttpClientModule: () => IPFSHttpClient,
-      apiAddress: "/ip4/127.0.0.1/tcp/45005",
-    }),
+    // httpClient({
+    //   loadHttpClientModule: () => IPFSHttpClient,
+    //   apiAddress: "/ip4/127.0.0.1/tcp/5001",
+    // }),
+    // httpClient({
+    //   loadHttpClientModule: () => IPFSHttpClient,
+    //   apiAddress: "/ip4/127.0.0.1/tcp/45005",
+    // }),
     jsIpfs({
       loadJsIpfsModule: () => IPFSCore,
       options: {

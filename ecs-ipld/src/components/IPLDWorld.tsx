@@ -17,6 +17,7 @@ import { Vector3, Quaternion } from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
 import { CarReader } from "@ipld/car/reader";
+import { Stats } from "@react-three/drei";
 
 type IPLDSceneProps = {
   arPackage: World;
@@ -67,7 +68,7 @@ class Anchor extends Facet<Anchor> {
 
 class IsAnchor extends Facet<IsAnchor> {
   xrAnchor?: XRAnchor = undefined;
-  needsUpdate: boolean = false;
+  needsUpdate?: boolean = false;
 }
 
 class Visibility extends Facet<Visibility> {
@@ -79,6 +80,10 @@ class TrackedImage extends Facet<TrackedImage> {
   imageBitmap?: ImageBitmap = undefined;
   physicalWidthInMeters?: number = undefined;
   imageTrackingIndex?: number = undefined;
+}
+
+class DetectedPlane extends Facet<DetectedPlane> {
+  detectedPlane?: "horizontal" | "vertical" = undefined;
 }
 
 type TrackedImageProps = {
@@ -110,6 +115,7 @@ type EntityData = {
   rotation?: QuaternionComponent;
   isAnchor?: Boolean;
   trackedImage?: TrackedImageComponent;
+  detectedPlane?: "horizontal" | "vertical";
   anchor?: CID | { position?: VectorAnchor; rotation?: QuaternionAnchor };
 };
 
@@ -180,6 +186,7 @@ const AnchorTransformSystem = () => {
           anchorRotationXCID = anchor.anchor;
           anchorRotationYCID = anchor.anchor;
           anchorRotationZCID = anchor.anchor;
+          anchorRotationWCID = anchor.anchor;
         } else {
           if (anchor.position instanceof CID) {
             anchorPositionXCID = anchor.position;
@@ -195,6 +202,7 @@ const AnchorTransformSystem = () => {
             anchorRotationXCID = anchor.rotation;
             anchorRotationYCID = anchor.rotation;
             anchorRotationZCID = anchor.rotation;
+            anchorRotationWCID = anchor.rotation;
           } else {
             anchorRotationXCID = anchor.rotation.x;
             anchorRotationYCID = anchor.rotation.y;
@@ -264,12 +272,14 @@ const AnchorTransformSystem = () => {
               0
           );
 
-          position.position = newPosition.add(position.startPosition);
           rotation.rotation = new Quaternion(
             newRotation.x + rotation.startRotation.x,
             newRotation.y + rotation.startRotation.y,
             newRotation.z + rotation.startRotation.z,
             newRotation.w + rotation.startRotation.w
+          );
+          position.position = newPosition.add(
+            position.startPosition.clone().applyQuaternion(newRotation)
           );
 
           const shouldShow = [
@@ -282,7 +292,11 @@ const AnchorTransformSystem = () => {
             anchorRotationW,
           ].reduce((prev, cur) => {
             return (
-              prev && (cur ? cur.get(IsAnchor)?.xrAnchor !== undefined : true)
+              prev &&
+              (cur
+                ? cur.get(Position)?.startPosition !== null &&
+                  cur.get(Rotation)?.startRotation !== null
+                : true)
             );
           }, true);
 
@@ -560,6 +574,91 @@ const ImageTrackingSystem = ({
   return useSystem((_: number) => {});
 };
 
+/*
+ * PlaneDetectionSystem
+ *
+ * Update startPosition and startRotation based on detectedPlane
+ */
+const PlaneDetectionSystem = ({
+  refSpace,
+}: {
+  refSpace: XRReferenceSpace | null;
+}) => {
+  const query = useQuery((e) => e.hasAll(DetectedPlane, Position, Rotation));
+
+  useFrame((_1, _2, frame: any) => {
+    if (!frame) return;
+
+    const detectedPlanes: XRPlaneSet = frame.detectedPlanes;
+
+    query.loop(
+      [DetectedPlane, Position, Rotation],
+      (_, [detectedPlane, position, rotation]) => {
+        const matchedPlane = Array.from(detectedPlanes).reduce(
+          (prev: XRPlane | null, cur: XRPlane) => {
+            if (
+              prev &&
+              cur.orientation.toLowerCase() === detectedPlane.detectedPlane
+            ) {
+              const prevPlanePose = frame.getPose(prev.planeSpace, refSpace);
+              const curPlanePose = frame.getPose(cur.planeSpace, refSpace);
+
+              if (cur.orientation.toLowerCase() === "horizontal") {
+                return curPlanePose.transform.position.y <
+                  prevPlanePose.transform.position.y
+                  ? cur
+                  : prev;
+              } else {
+                return curPlanePose.transform.position.z <
+                  prevPlanePose.transform.position.z
+                  ? cur
+                  : prev;
+              }
+            } else {
+              return cur;
+            }
+          },
+          null
+        );
+
+        if (matchedPlane) {
+          // Start position is updated as plane is detected. NOTE: anchor is currently only created once based on initial startPosition
+
+          const planePose = frame.getPose(matchedPlane.planeSpace, refSpace);
+
+          if (!planePose) {
+            position.startPosition = null;
+            rotation.startRotation = null;
+            return;
+          }
+
+          const newStartPosition = new Vector3(
+            planePose.transform.position.x,
+            planePose.transform.position.y,
+            planePose.transform.position.z
+          );
+
+          const newStartRotation = new Quaternion(
+            planePose.transform.orientation.x,
+            planePose.transform.orientation.y,
+            planePose.transform.orientation.z,
+            planePose.transform.orientation.w
+          );
+
+          position.startPosition = newStartPosition;
+          rotation.startRotation = newStartRotation;
+        } else {
+          // No plane found, remove start position and rotation
+          position.startPosition = null;
+          rotation.startRotation = null;
+        }
+      }
+    );
+  });
+
+  return useSystem((_: number) => {});
+};
+
 function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
   const [gltf, setGltf] = React.useState<GLTF | null>(null);
   const [entityData, setEntityData] = React.useState<EntityData | null>(null);
@@ -711,6 +810,19 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           />
         </>
       ) : null}
+      {entityData.detectedPlane ? (
+        <>
+          <DetectedPlane detectedPlane={entityData.detectedPlane} />
+          <Position
+            {...position}
+            startPosition={position.startPosition ?? null}
+          />
+          <Rotation
+            {...rotation}
+            startRotation={rotation.startRotation ?? null}
+          />
+        </>
+      ) : null}
     </Entity>
   ) : null;
 }
@@ -755,6 +867,7 @@ function IPLDWorldCanvas({
           refSpace={refSpace}
           ipfs={ipfs}
         />
+        <PlaneDetectionSystem refSpace={refSpace} />
         {arPackage.map((entityCID) => {
           return (
             <Model
@@ -784,7 +897,7 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
                 "hit-test",
                 "image-tracking",
                 "anchors",
-                // "plane-detection",
+                "plane-detection",
               ],
               trackedImages: trackedImages,
             } as any
@@ -805,6 +918,7 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
           trackedImages={trackedImages}
           setTrackedImages={setTrackedImages}
         />
+        <Stats showPanel={0} className="stats" />
       </Canvas>
     </>
   );
