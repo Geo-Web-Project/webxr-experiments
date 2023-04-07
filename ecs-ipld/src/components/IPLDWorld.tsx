@@ -43,7 +43,7 @@ class Scale extends Facet<Scale> {
 }
 
 class Rotation extends Facet<Rotation> {
-  startRotation: Quaternion | null = new Quaternion(0, 0, 0, 0);
+  startRotation: Quaternion | null = new Quaternion(0, 0, 0, 1);
   rotation?: Quaternion = undefined;
 }
 
@@ -269,7 +269,7 @@ const AnchorTransformSystem = () => {
               0,
             anchorRotationW?.get(Rotation)?.rotation?.w ??
               anchorRotationW?.get(Rotation)?.startRotation?.w ??
-              0
+              1
           );
 
           rotation.rotation = newRotation.multiply(rotation.startRotation);
@@ -670,7 +670,7 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           `Fetching CAR from Web3.storage: ${entityCID.toString()}`
         );
         const carResponse = await axios.get(
-          `https://w3s.link/ipfs/${entityCID.toString()}`,
+          `${IPFS_GATEWAY_HOST}/ipfs/${entityCID.toString()}`,
           {
             responseType: "blob",
             headers: { Accept: "application/vnd.ipld.car" },

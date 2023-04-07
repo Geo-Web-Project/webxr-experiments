@@ -35,7 +35,7 @@ function App({ ipfsP }: { ipfsP: any }) {
       } catch (e) {
         console.debug(`Fetching CAR from Web3.storage: ${rootCIDStr}`);
         const carResponse = await axios.get(
-          `https://w3s.link/ipfs/${rootCIDStr}`,
+          `${IPFS_GATEWAY_HOST}/ipfs/${rootCIDStr}`,
           {
             responseType: "blob",
             headers: { Accept: "application/vnd.ipld.car" },
