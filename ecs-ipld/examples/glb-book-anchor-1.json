@@ -4,6 +4,11 @@
     "y": 0,
     "z": -1
   },
+  "rotation": {
+    "x": 1.570796,
+    "y": 0,
+    "z": 0
+  },
   "anchor": {
     "position": {
       "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"

@@ -5,20 +5,26 @@
     "z": 1
   },
   "scale": { "x": 2, "y": 2, "z": 2 },
+  "rotation": {
+    "x": -0.7071067,
+    "y": 0,
+    "z": 0,
+    "w": 0.7071069
+  },
   "anchor": {
     "position": {
       "x": {
-        "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
+        "/": "baguqeera3gciazofc6llq6afhja4j4sreocg3k3oh4pbgybame42al5aqqvq"
       },
       "y": {
         "/": "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
       },
       "z": {
-        "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
+        "/": "baguqeera3gciazofc6llq6afhja4j4sreocg3k3oh4pbgybame42al5aqqvq"
       }
     },
     "rotation": {
-      "/": "baguqeeraw5gfguqwibcfm3buuljgaogwqiec4ufijwd6pj7zqeee2a4lhylq"
+      "/": "baguqeera3gciazofc6llq6afhja4j4sreocg3k3oh4pbgybame42al5aqqvq"
     }
   },
   "glTFModel": { "/": "QmRh7FTaB3AdX2x29BG7PbMUedhZQmo3xfLnxV2U61BcCU" }

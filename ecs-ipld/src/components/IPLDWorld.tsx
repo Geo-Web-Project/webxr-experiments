@@ -272,12 +272,7 @@ const AnchorTransformSystem = () => {
               0
           );
 
-          rotation.rotation = new Quaternion(
-            newRotation.x + rotation.startRotation.x,
-            newRotation.y + rotation.startRotation.y,
-            newRotation.z + rotation.startRotation.z,
-            newRotation.w + rotation.startRotation.w
-          );
+          rotation.rotation = newRotation.multiply(rotation.startRotation);
           position.position = newPosition.add(
             position.startPosition.clone().applyQuaternion(newRotation)
           );
@@ -596,14 +591,13 @@ const PlaneDetectionSystem = ({
       (_, [detectedPlane, position, rotation]) => {
         const matchedPlane = Array.from(detectedPlanes).reduce(
           (prev: XRPlane | null, cur: XRPlane) => {
-            if (
-              prev &&
-              cur.orientation.toLowerCase() === detectedPlane.detectedPlane
-            ) {
-              const prevPlanePose = frame.getPose(prev.planeSpace, refSpace);
-              const curPlanePose = frame.getPose(cur.planeSpace, refSpace);
+            if (!prev) return cur;
 
-              if (cur.orientation.toLowerCase() === "horizontal") {
+            if (cur.orientation.toLowerCase() === detectedPlane.detectedPlane) {
+              const curPlanePose = frame.getPose(cur.planeSpace, refSpace);
+              const prevPlanePose = frame.getPose(prev.planeSpace, refSpace);
+
+              if (detectedPlane.detectedPlane === "horizontal") {
                 return curPlanePose.transform.position.y <
                   prevPlanePose.transform.position.y
                   ? cur
@@ -615,7 +609,7 @@ const PlaneDetectionSystem = ({
                   : prev;
               }
             } else {
-              return cur;
+              return prev;
             }
           },
           null
