@@ -1,0 +1,28 @@
+{
+  "plane": {
+    "width": 0.3,
+    "height": 0.3
+  },
+  "rotation": {
+    "x": -0.7071067,
+    "y": 0,
+    "z": 0,
+    "w": 0.7071069
+  },
+  "anchor": {
+    "position": {
+      "/": "baguqeera7rtolglmtyhpjpnwanso3kjvhals4cyfxvlzpz727bmkz25x53ha"
+    },
+    "rotation": {
+      "x": {
+        "/": "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
+      },
+      "y": {
+        "/": "baguqeeratxkttqj7fdlcdkqhmj7sqfimi2lsihmnvn62nil3toj7romm7nfq"
+      },
+      "z": {
+        "/": "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
+      }
+    }
+  }
+}

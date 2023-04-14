@@ -96,6 +96,8 @@ class Raycast extends Facet<Raycast> {
   direction: Vector3 = new Vector3(0, 0, -1);
 }
 
+class ViewerPose extends Facet<ViewerPose> {}
+
 type TrackedImageProps = {
   image: ImageBitmap;
   widthInMeters: number;
@@ -123,6 +125,7 @@ type TrackedImageComponent = {
   physicalWidthInMeters?: number;
 };
 type EntityData = {
+  viewerPose?: boolean;
   plane?: PlaneParams;
   raycast?: RaycastComponent;
   glTFModel: CID;
@@ -208,7 +211,7 @@ const AnchorTransformSystem = () => {
             anchorPositionXCID = anchor.position;
             anchorPositionYCID = anchor.position;
             anchorPositionZCID = anchor.position;
-          } else {
+          } else if (anchor.position) {
             anchorPositionXCID = anchor.position.x;
             anchorPositionYCID = anchor.position.y;
             anchorPositionZCID = anchor.position.z;
@@ -219,7 +222,7 @@ const AnchorTransformSystem = () => {
             anchorRotationYCID = anchor.rotation;
             anchorRotationZCID = anchor.rotation;
             anchorRotationWCID = anchor.rotation;
-          } else {
+          } else if (anchor.rotation) {
             anchorRotationXCID = anchor.rotation.x;
             anchorRotationYCID = anchor.rotation.y;
             anchorRotationZCID = anchor.rotation.z;
@@ -685,17 +688,19 @@ const RaycastSystem = ({
 }) => {
   const query = useQuery((e) => e.hasAll(Raycast, Position, Rotation));
 
-  useFrame((_1, _2, frame: any) => {
+  useFrame((_1, _2, frame: XRFrame) => {
     if (!frame || !hitTestSource || !refSpace) return;
 
     const hitTestResults: XRHitTestResult[] =
       frame.getHitTestResults(hitTestSource);
 
+    const viewerPose = frame.getViewerPose(refSpace);
+
     if (hitTestResults.length > 0) {
       const pose = hitTestResults[0].getPose(refSpace);
 
       query.loop([Position, Rotation], (_, [position, rotation]) => {
-        if (pose) {
+        if (pose && viewerPose) {
           const newStartPosition = new Vector3(
             pose.transform.position.x,
             pose.transform.position.y,
@@ -717,6 +722,48 @@ const RaycastSystem = ({
         }
       });
     }
+  });
+
+  return useSystem((_: number) => {});
+};
+
+/*
+ * ViewerPoseSystem
+ */
+const ViewerPoseSystem = ({
+  refSpace,
+}: {
+  refSpace: XRReferenceSpace | null;
+}) => {
+  const query = useQuery((e) => e.hasAll(ViewerPose, Position, Rotation));
+
+  useFrame((_1, _2, frame: XRFrame) => {
+    if (!frame || !refSpace) return;
+
+    const viewerPose = frame.getViewerPose(refSpace);
+
+    query.loop([Position, Rotation], (_, [position, rotation]) => {
+      if (viewerPose) {
+        const newStartPosition = new Vector3(
+          viewerPose.transform.position.x,
+          viewerPose.transform.position.y,
+          viewerPose.transform.position.z
+        );
+
+        const newStartRotation = new Quaternion(
+          viewerPose.transform.orientation.x,
+          viewerPose.transform.orientation.y,
+          viewerPose.transform.orientation.z,
+          viewerPose.transform.orientation.w
+        );
+
+        position.startPosition = newStartPosition;
+        rotation.startRotation = newStartRotation;
+      } else {
+        position.startPosition = null;
+        rotation.startRotation = null;
+      }
+    });
   });
 
   return useSystem((_: number) => {});
@@ -925,6 +972,19 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           />
         </>
       ) : null}
+      {entityData.viewerPose == true ? (
+        <>
+          <ViewerPose />
+          <Position
+            {...position}
+            startPosition={position.startPosition ?? null}
+          />
+          <Rotation
+            {...rotation}
+            startRotation={rotation.startRotation ?? null}
+          />
+        </>
+      ) : null}
     </Entity>
   ) : null;
 }
@@ -978,6 +1038,7 @@ function IPLDWorldCanvas({
         />
         <PlaneDetectionSystem refSpace={refSpace} />
         <RaycastSystem refSpace={refSpace} hitTestSource={hitTestSource} />
+        <ViewerPoseSystem refSpace={refSpace} />
         {arPackage.map((entityCID) => {
           return (
             <Model
