@@ -17,7 +17,7 @@ import { Vector3, Quaternion } from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
 import { CarReader } from "@ipld/car/reader";
-import { Stats } from "@react-three/drei";
+import { Stats, Plane } from "@react-three/drei";
 
 type IPLDSceneProps = {
   arPackage: World;
@@ -31,6 +31,11 @@ class CIDFacet extends Facet<CIDFacet> {
 class GLTFFacet extends Facet<GLTFFacet> {
   glTFModel?: GLTF = undefined;
 }
+
+type PlaneParams = {
+  width: number;
+  height: number;
+};
 
 class Position extends Facet<Position> {
   startPosition: Vector3 | null = new Vector3(0, 0, 0);
@@ -86,6 +91,11 @@ class DetectedPlane extends Facet<DetectedPlane> {
   detectedPlane?: "horizontal" | "vertical" = undefined;
 }
 
+class Raycast extends Facet<Raycast> {
+  origin: Vector3 = new Vector3(0, 0, 0);
+  direction: Vector3 = new Vector3(0, 0, -1);
+}
+
 type TrackedImageProps = {
   image: ImageBitmap;
   widthInMeters: number;
@@ -104,11 +114,17 @@ type QuaternionComponent = {
   z: number;
   w: number;
 };
+type RaycastComponent = {
+  origin: VectorComponent;
+  direction: VectorComponent;
+};
 type TrackedImageComponent = {
   imageAsset?: CID;
   physicalWidthInMeters?: number;
 };
 type EntityData = {
+  plane?: PlaneParams;
+  raycast?: RaycastComponent;
   glTFModel: CID;
   position?: VectorComponent;
   scale?: VectorComponent;
@@ -566,7 +582,11 @@ const ImageTrackingSystem = ({
     );
   });
 
-  return useSystem((_: number) => {});
+  return useSystem((_: number) => {
+    if (query.length === 0 && trackedImages == null) {
+      setTrackedImages([]);
+    }
+  });
 };
 
 /*
@@ -648,6 +668,55 @@ const PlaneDetectionSystem = ({
         }
       }
     );
+  });
+
+  return useSystem((_: number) => {});
+};
+
+/*
+ * RaycastSystem
+ */
+const RaycastSystem = ({
+  refSpace,
+  hitTestSource,
+}: {
+  refSpace: XRReferenceSpace | null;
+  hitTestSource: XRHitTestSource | null;
+}) => {
+  const query = useQuery((e) => e.hasAll(Raycast, Position, Rotation));
+
+  useFrame((_1, _2, frame: any) => {
+    if (!frame || !hitTestSource || !refSpace) return;
+
+    const hitTestResults: XRHitTestResult[] =
+      frame.getHitTestResults(hitTestSource);
+
+    if (hitTestResults.length > 0) {
+      const pose = hitTestResults[0].getPose(refSpace);
+
+      query.loop([Position, Rotation], (_, [position, rotation]) => {
+        if (pose) {
+          const newStartPosition = new Vector3(
+            pose.transform.position.x,
+            pose.transform.position.y,
+            pose.transform.position.z
+          );
+
+          const newStartRotation = new Quaternion(
+            pose.transform.orientation.x,
+            pose.transform.orientation.y,
+            pose.transform.orientation.z,
+            pose.transform.orientation.w
+          );
+
+          position.startPosition = newStartPosition;
+          rotation.startRotation = newStartRotation;
+        } else {
+          position.startPosition = null;
+          rotation.startRotation = null;
+        }
+      });
+    }
   });
 
   return useSystem((_: number) => {});
@@ -749,6 +818,17 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
   return entityData ? (
     <Entity>
       <CIDFacet cid={entityCID} />
+      {entityData.plane ? (
+        <>
+          <Visibility isVisible={true} />
+          <Scale {...scale} />
+          <Rotation {...rotation} />
+          <Position {...position} />
+          <ThreeView>
+            <Plane args={[entityData.plane.width, entityData.plane.height]} />
+          </ThreeView>
+        </>
+      ) : null}
       {gltf ? (
         <>
           <GLTFFacet glTFModel={gltf} />
@@ -817,6 +897,34 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           />
         </>
       ) : null}
+      {entityData.raycast ? (
+        <>
+          <Raycast
+            origin={
+              new Vector3(
+                entityData.raycast.origin.x,
+                entityData.raycast.origin.y,
+                entityData.raycast.origin.z
+              )
+            }
+            direction={
+              new Vector3(
+                entityData.raycast.direction.x,
+                entityData.raycast.direction.y,
+                entityData.raycast.direction.z
+              )
+            }
+          />
+          <Position
+            {...position}
+            startPosition={position.startPosition ?? null}
+          />
+          <Rotation
+            {...rotation}
+            startRotation={rotation.startRotation ?? null}
+          />
+        </>
+      ) : null}
     </Entity>
   ) : null;
 }
@@ -838,19 +946,26 @@ function IPLDWorldCanvas({
 
   const [showWorld, setShowWorld] = React.useState(false);
   const [refSpace, setRefSpace] = React.useState<XRReferenceSpace | null>(null);
+  const [hitTestSource, setHitTestSource] =
+    React.useState<XRHitTestSource | null>(null);
 
-  function onSessionStart({ target }: { target: XRSession }) {
+  async function onSessionStart({ target }: { target: XRSession }) {
     setShowWorld(true);
 
-    target.requestReferenceSpace("local").then((refSpace) => {
-      setRefSpace(refSpace);
+    const localRefSpace = await target.requestReferenceSpace("local");
+    setRefSpace(localRefSpace);
+
+    const viewerRefSpace = await target.requestReferenceSpace("viewer");
+    const hitTestSource = await target.requestHitTestSource!({
+      space: viewerRefSpace,
     });
+    setHitTestSource(hitTestSource ?? null);
   }
 
   return (
     <ECS.Provider>
       <XR referenceSpace="local" onSessionStart={onSessionStart}>
-        <hemisphereLight groundColor={0xbbbbff} position={[0.5, 1, 0.25]} />
+        <directionalLight color={0xffffff} intensity={0.5} />
         <GLTFSystem />
         <TransformSystem showWorld={showWorld} />
         <AnchorTransformSystem />
@@ -862,6 +977,7 @@ function IPLDWorldCanvas({
           ipfs={ipfs}
         />
         <PlaneDetectionSystem refSpace={refSpace} />
+        <RaycastSystem refSpace={refSpace} hitTestSource={hitTestSource} />
         {arPackage.map((entityCID) => {
           return (
             <Model
@@ -877,8 +993,9 @@ function IPLDWorldCanvas({
 }
 
 export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
-  const [trackedImages, setTrackedImages] =
-    React.useState<TrackedImageProps[] | null>(null);
+  const [trackedImages, setTrackedImages] = React.useState<
+    TrackedImageProps[] | null
+  >(null);
 
   return (
     <>
