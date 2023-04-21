@@ -807,10 +807,12 @@ const ImageScanSystem = ({
       frame.getHitTestResults(hitTestSource);
 
     const viewerPose = frame.getViewerPose(refSpace);
+    if (!viewerPose) return;
+
     const hitTestPose =
       hitTestResults.length > 0 ? hitTestResults[0].getPose(refSpace) : null;
 
-    if (viewerPose && hitTestPose) {
+    if (hitTestPose) {
       const hitTestPosition = new Vector3(
         hitTestPose.transform.position.x,
         hitTestPose.transform.position.y,
@@ -830,12 +832,19 @@ const ImageScanSystem = ({
       const height = 2 * Math.tan(vFOV / 2) * distance; // visible height
       const width =
         height * (camera as THREE.PerspectiveCamera).aspect * (0.75 / 0.3);
+      document.getElementById("scanner-overlay")!.style.border =
+        "solid 5px green";
       document.getElementById(
         "scanner-text"
       )!.innerText = `Physical Width: ${width.toFixed(3)}m`;
-
-      console.log(viewerPose.transform.orientation);
-      console.log(hitTestPose.transform.orientation);
+      document.getElementById("scanner-button")!.removeAttribute("disabled");
+    } else {
+      document.getElementById("scanner-overlay")!.style.border =
+        "solid 5px red";
+      document.getElementById("scanner-text")!.innerText = `No width found`;
+      document
+        .getElementById("scanner-button")!
+        .setAttribute("disabled", "true");
     }
   });
 
@@ -1102,7 +1111,7 @@ function IPLDWorldCanvas({
     }
   }
 
-  async function onSessionEnd({ target }: { target: XRSession }) {
+  async function onSessionEnd() {
     setShowWorld(false);
     setRefSpace(null);
     setHitTestSource(null);
@@ -1165,6 +1174,59 @@ function ImageScanOverlay() {
           id="scanner-text"
           style={{ backgroundColor: "rgba(0, 0, 0, 0.8)", color: "white" }}
         ></div>
+        <button
+          id="scanner-button"
+          disabled
+          style={{
+            marginTop: "100px",
+            padding: "12px 24px",
+            border: "1px solid white",
+            borderRadius: "4px",
+            background: "rgba(0, 0, 0, 0.1)",
+            color: "white",
+            font: "0.8125rem sans-serif",
+            outline: "none",
+            zIndex: "99999",
+            cursor: "pointer",
+          }}
+          onTouchEnd={() => {
+            const video = document.getElementById(
+              "capture-video"
+            ) as HTMLVideoElement;
+
+            const canvas = document.createElement(
+              "canvas"
+            ) as HTMLCanvasElement;
+
+            console.log(video.width);
+            console.log(video.height);
+
+            console.log(video.videoWidth);
+            console.log(video.videoHeight);
+
+            video.width = video.videoWidth;
+            video.height = video.videoHeight;
+
+            const context = canvas.getContext("2d");
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context!.drawImage(
+              video,
+              0,
+              0,
+              video.videoWidth,
+              video.videoHeight
+            );
+            const dataUrl = canvas.toDataURL("image/png");
+
+            const link = document.createElement("a");
+            link.href = dataUrl;
+            link.download = "test-image.png";
+            link.click();
+          }}
+        >
+          Take Image
+        </button>
       </div>
     </>
   );
@@ -1179,11 +1241,45 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
     TrackedImageProps[] | null
   >(null);
   const [showWorld, setShowWorld] = React.useState(false);
+  // const [imageCapture, setImageCapture] = React.useState<ImageCapture | null>(
+  //   null
+  // );
 
   const overlayRef = React.useRef(document.createElement("div"));
 
+  React.useEffect(() => {
+    async function enableStream() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            aspectRatio: window.innerHeight / window.innerWidth,
+          },
+        });
+        // const imageCapture = new ImageCapture(stream.getVideoTracks()[0]);
+
+        const video = document.getElementById(
+          "capture-video"
+        ) as HTMLVideoElement;
+
+        if (!video) return;
+
+        video.autoplay = true;
+        video.srcObject = stream;
+
+        // setImageCapture(imageCapture);
+      } catch (err) {
+        // Removed for brevity
+        console.error(err);
+      }
+    }
+
+    enableStream();
+  }, []);
+
   return (
     <ECS.Provider>
+      <video id="capture-video" hidden />
       <div id="overlay" ref={overlayRef}>
         {showWorld ? <ImageScanOverlay /> : null}
         {trackedImages ? (
@@ -1204,25 +1300,64 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
           />
         ) : null}
       </div>
-
-      <Canvas
-        camera={{
-          fov: 70,
-          aspect: window.innerWidth / window.innerHeight,
-          near: 0.01,
-          far: 20,
-        }}
-      >
-        <IPLDWorldCanvas
-          ipfs={ipfs}
-          arPackage={arPackage}
-          trackedImages={trackedImages}
-          setTrackedImages={setTrackedImages}
-          showWorld={showWorld}
-          setShowWorld={setShowWorld}
-        ></IPLDWorldCanvas>
-      </Canvas>
+      {
+        <Canvas
+          id="xr-canvas"
+          camera={{
+            fov: 70,
+            aspect: window.innerWidth / window.innerHeight,
+            near: 0.01,
+            far: 20,
+          }}
+        >
+          <IPLDWorldCanvas
+            ipfs={ipfs}
+            arPackage={arPackage}
+            trackedImages={trackedImages}
+            setTrackedImages={setTrackedImages}
+            showWorld={showWorld}
+            setShowWorld={setShowWorld}
+          ></IPLDWorldCanvas>
+        </Canvas>
+      }
       <Stats showPanel={0} className="stats" parent={overlayRef} />
     </ECS.Provider>
   );
+}
+
+function useUserMedia(requestedMedia: MediaStreamConstraints) {
+  const [mediaStream, setMediaStream] = React.useState<MediaStream | null>(
+    null
+  );
+  const [imageCapture, setImageCapture] = React.useState<ImageCapture | null>(
+    null
+  );
+
+  React.useEffect(() => {
+    async function enableStream() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(
+          requestedMedia
+        );
+        const imageCapture = new ImageCapture(stream.getVideoTracks()[0]);
+        setMediaStream(stream);
+        setImageCapture(imageCapture);
+      } catch (err) {
+        // Removed for brevity
+        console.error(err);
+      }
+    }
+
+    if (!mediaStream) {
+      enableStream();
+    } else {
+      return function cleanup() {
+        mediaStream.getTracks().forEach((track) => {
+          track.stop();
+        });
+      };
+    }
+  }, [mediaStream, requestedMedia]);
+
+  return { mediaStream, imageCapture };
 }
