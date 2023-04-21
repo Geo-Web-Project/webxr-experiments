@@ -12,12 +12,13 @@ import {
   useAnimationFrame,
 } from "@react-ecs/core";
 import { ThreeView } from "@react-ecs/three";
-import { Entity, Facet } from "@react-ecs/core";
+import { Entity, Facet, DOMView } from "@react-ecs/core";
 import { Vector3, Quaternion } from "three";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ARButton, XR } from "@react-three/xr";
 import { CarReader } from "@ipld/car/reader";
 import { Stats, Plane } from "@react-three/drei";
+import * as THREE from "three";
 
 type IPLDSceneProps = {
   arPackage: World;
@@ -687,7 +688,7 @@ const RaycastSystem = ({
   hitTestSource: XRHitTestSource | null;
 }) => {
   const query = useQuery((e) => e.hasAll(Raycast, Position, Rotation));
-
+  const { camera } = useThree();
   useFrame((_1, _2, frame: XRFrame) => {
     if (!frame || !hitTestSource || !refSpace) return;
 
@@ -716,6 +717,24 @@ const RaycastSystem = ({
 
           position.startPosition = newStartPosition;
           rotation.startRotation = newStartRotation;
+
+          const viewerPosition = new Vector3(
+            viewerPose.transform.position.x,
+            viewerPose.transform.position.y,
+            viewerPose.transform.position.z
+          );
+          const distance = viewerPosition.distanceTo(newStartPosition);
+          console.log("distance: ", distance);
+
+          const vFOV = THREE.MathUtils.degToRad(
+            (camera as THREE.PerspectiveCamera).fov
+          ); // convert vertical fov to radians
+
+          const height = 2 * Math.tan(vFOV / 2) * distance; // visible height
+          const width = height * (camera as THREE.PerspectiveCamera).aspect;
+
+          console.log("height: ", height);
+          console.log("width: ", width);
         } else {
           position.startPosition = null;
           rotation.startRotation = null;
@@ -764,6 +783,58 @@ const ViewerPoseSystem = ({
         rotation.startRotation = null;
       }
     });
+  });
+
+  return useSystem((_: number) => {});
+};
+
+/*
+ * ImageScanSystem
+ */
+const ImageScanSystem = ({
+  refSpace,
+  hitTestSource,
+}: {
+  refSpace: XRReferenceSpace | null;
+  hitTestSource: XRHitTestSource | null;
+}) => {
+  const { camera } = useThree();
+
+  useFrame((_1, _2, frame: XRFrame) => {
+    if (!frame || !hitTestSource || !refSpace) return;
+
+    const hitTestResults: XRHitTestResult[] =
+      frame.getHitTestResults(hitTestSource);
+
+    const viewerPose = frame.getViewerPose(refSpace);
+    const pose =
+      hitTestResults.length > 0 ? hitTestResults[0].getPose(refSpace) : null;
+
+    if (viewerPose && pose) {
+      const hitTestPosition = new Vector3(
+        pose.transform.position.x,
+        pose.transform.position.y,
+        pose.transform.position.z
+      );
+      const viewerPosition = new Vector3(
+        viewerPose.transform.position.x,
+        viewerPose.transform.position.y,
+        viewerPose.transform.position.z
+      );
+
+      const distance = viewerPosition.distanceTo(hitTestPosition);
+
+      const vFOV = THREE.MathUtils.degToRad(
+        (camera as THREE.PerspectiveCamera).fov
+      ); // convert vertical fov to radians
+
+      const height = 2 * Math.tan(vFOV / 2) * distance; // visible height
+      const width = height * (camera as THREE.PerspectiveCamera).aspect;
+      const physicalWidthInMeters = width * 0.75;
+      document.getElementById(
+        "scanner-text"
+      )!.innerText = `Physical Width: ${physicalWidthInMeters.toFixed(3)}m`;
+    }
   });
 
   return useSystem((_: number) => {});
@@ -992,6 +1063,9 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
 type IPLDWorldCanvasProps = IPLDSceneProps & {
   trackedImages: TrackedImageProps[] | null;
   setTrackedImages: (i: TrackedImageProps[]) => void;
+  showWorld: boolean;
+  setShowWorld: (i: boolean) => void;
+  children?: React.ReactNode;
 };
 
 function IPLDWorldCanvas({
@@ -999,12 +1073,10 @@ function IPLDWorldCanvas({
   ipfs,
   trackedImages,
   setTrackedImages,
+  showWorld,
+  setShowWorld,
+  children,
 }: IPLDWorldCanvasProps) {
-  const ECS = useECS();
-
-  useAnimationFrame(ECS.update);
-
-  const [showWorld, setShowWorld] = React.useState(false);
   const [refSpace, setRefSpace] = React.useState<XRReferenceSpace | null>(null);
   const [hitTestSource, setHitTestSource] =
     React.useState<XRHitTestSource | null>(null);
@@ -1020,62 +1092,117 @@ function IPLDWorldCanvas({
       space: viewerRefSpace,
     });
     setHitTestSource(hitTestSource ?? null);
+
+    const stats = document.getElementsByClassName("stats");
+    if (stats.length > 0) {
+      (stats[0] as HTMLElement).style.cssText =
+        "position:fixed;top:20;left:0;cursor:pointer;opacity:0.9;z-index:10000";
+    }
+  }
+
+  async function onSessionEnd({ target }: { target: XRSession }) {
+    setShowWorld(false);
+    setRefSpace(null);
+    setHitTestSource(null);
   }
 
   return (
-    <ECS.Provider>
-      <XR referenceSpace="local" onSessionStart={onSessionStart}>
-        <directionalLight color={0xffffff} intensity={0.5} />
-        <GLTFSystem />
-        <TransformSystem showWorld={showWorld} />
-        <AnchorTransformSystem />
-        <IsAnchorSystem refSpace={refSpace} />
-        <ImageTrackingSystem
-          trackedImages={trackedImages}
-          setTrackedImages={setTrackedImages}
-          refSpace={refSpace}
-          ipfs={ipfs}
-        />
-        <PlaneDetectionSystem refSpace={refSpace} />
-        <RaycastSystem refSpace={refSpace} hitTestSource={hitTestSource} />
-        <ViewerPoseSystem refSpace={refSpace} />
-        {arPackage.map((entityCID) => {
-          return (
-            <Model
-              key={entityCID.toString()}
-              entityCID={entityCID}
-              ipfs={ipfs}
-            />
-          );
-        })}
-      </XR>
-    </ECS.Provider>
+    <XR
+      referenceSpace="local"
+      onSessionStart={onSessionStart}
+      onSessionEnd={onSessionEnd}
+    >
+      <directionalLight color={0xffffff} intensity={0.5} />
+      <GLTFSystem />
+      <TransformSystem showWorld={showWorld} />
+      <AnchorTransformSystem />
+      <IsAnchorSystem refSpace={refSpace} />
+      <ImageTrackingSystem
+        trackedImages={trackedImages}
+        setTrackedImages={setTrackedImages}
+        refSpace={refSpace}
+        ipfs={ipfs}
+      />
+      <PlaneDetectionSystem refSpace={refSpace} />
+      <RaycastSystem refSpace={refSpace} hitTestSource={hitTestSource} />
+      <ImageScanSystem refSpace={refSpace} hitTestSource={hitTestSource} />
+      <ViewerPoseSystem refSpace={refSpace} />
+      {arPackage.map((entityCID) => {
+        return (
+          <Model key={entityCID.toString()} entityCID={entityCID} ipfs={ipfs} />
+        );
+      })}
+      {children}
+    </XR>
+  );
+}
+
+function ImageScanOverlay() {
+  return (
+    <>
+      <div
+        id="scanner"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
+        <div
+          id="scanner-overlay"
+          style={{
+            width: "75%",
+            paddingTop: "50%",
+            backgroundColor: "rgba(0, 0, 0, 0.3)",
+            border: "5px solid red",
+          }}
+        ></div>
+        <div
+          id="scanner-text"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.8)", color: "white" }}
+        ></div>
+      </div>
+    </>
   );
 }
 
 export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
+  const ECS = useECS();
+
+  useAnimationFrame(ECS.update);
+
   const [trackedImages, setTrackedImages] = React.useState<
     TrackedImageProps[] | null
   >(null);
+  const [showWorld, setShowWorld] = React.useState(false);
+
+  const overlayRef = React.useRef(document.createElement("div"));
 
   return (
-    <>
-      {trackedImages ? (
-        <ARButton
-          sessionInit={
-            {
-              requiredFeatures: [
-                "local",
-                "hit-test",
-                "image-tracking",
-                "anchors",
-                "plane-detection",
-              ],
-              trackedImages: trackedImages,
-            } as any
-          }
-        />
-      ) : null}
+    <ECS.Provider>
+      <div id="overlay" ref={overlayRef}>
+        {showWorld ? <ImageScanOverlay /> : null}
+        {trackedImages ? (
+          <ARButton
+            sessionInit={
+              {
+                requiredFeatures: [
+                  "local",
+                  "hit-test",
+                  "anchors",
+                  "dom-overlay",
+                ],
+                optionalFeatures: ["plane-detection", "image-tracking"],
+                trackedImages: trackedImages,
+                domOverlay: { root: document.getElementById("overlay") },
+              } as any
+            }
+          />
+        ) : null}
+      </div>
+
       <Canvas
         camera={{
           fov: 70,
@@ -1089,9 +1216,11 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
           arPackage={arPackage}
           trackedImages={trackedImages}
           setTrackedImages={setTrackedImages}
-        />
-        <Stats showPanel={0} className="stats" />
+          showWorld={showWorld}
+          setShowWorld={setShowWorld}
+        ></IPLDWorldCanvas>
       </Canvas>
-    </>
+      <Stats showPanel={0} className="stats" parent={overlayRef} />
+    </ECS.Provider>
   );
 }

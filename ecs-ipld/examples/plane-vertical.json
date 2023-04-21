@@ -1,20 +1,14 @@
 {
   "plane": {
-    "width": 0.3,
-    "height": 0.3
+    "width": 0.1,
+    "height": 0.1
   },
-  "rotation": {
-    "x": -0.7071067,
+  "position": {
+    "x": 0,
     "y": 0,
-    "z": 0,
-    "w": 0.7071069
+    "z": -0.5
   },
   "anchor": {
-    "position": {
-      "/": "baguqeera7rtolglmtyhpjpnwanso3kjvhals4cyfxvlzpz727bmkz25x53ha"
-    },
-    "rotation": {
-      "/": "baguqeeralnj5po4c4e7ldtnexlpcq3eneta2eis7te3qcxoovycmwtc7kzva"
-    }
+    "/": "baguqeeratxkttqj7fdlcdkqhmj7sqfimi2lsihmnvn62nil3toj7romm7nfq"
   }
 }
