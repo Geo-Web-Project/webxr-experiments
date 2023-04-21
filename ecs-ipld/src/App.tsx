@@ -5,14 +5,14 @@ import { default as axios } from "axios";
 import { CID } from "multiformats/cid";
 import { CarReader } from "@ipld/car/reader";
 
-export const IPFS_GATEWAY_HOST = "https://192.168.40.215:8081";
+export const IPFS_GATEWAY_HOST = "https://w3s.link";
 
 function App({ ipfsP }: { ipfsP: any }) {
   const { hash } = window.location;
   const rootCIDStr =
     hash.length > 0
       ? hash.replace("#", "")
-      : "baguqeeran4zdh2qzqjii34mobkgcs4mao46gxpgzmognzaexjmhchyf7chwq";
+      : "baguqeerah2hz6d34lkfq4ffbky4bpdr6gb3nnvwg6w3qtv7bm2pmcbaxh7zq";
   const [ipfs, setIpfs] = React.useState<IPFS | null>(null);
   const [arPackage, setArPackage] = React.useState<World | null>(null);
 
