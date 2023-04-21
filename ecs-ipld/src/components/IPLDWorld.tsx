@@ -807,14 +807,14 @@ const ImageScanSystem = ({
       frame.getHitTestResults(hitTestSource);
 
     const viewerPose = frame.getViewerPose(refSpace);
-    const pose =
+    const hitTestPose =
       hitTestResults.length > 0 ? hitTestResults[0].getPose(refSpace) : null;
 
-    if (viewerPose && pose) {
+    if (viewerPose && hitTestPose) {
       const hitTestPosition = new Vector3(
-        pose.transform.position.x,
-        pose.transform.position.y,
-        pose.transform.position.z
+        hitTestPose.transform.position.x,
+        hitTestPose.transform.position.y,
+        hitTestPose.transform.position.z
       );
       const viewerPosition = new Vector3(
         viewerPose.transform.position.x,
@@ -824,16 +824,18 @@ const ImageScanSystem = ({
 
       const distance = viewerPosition.distanceTo(hitTestPosition);
 
-      const vFOV = THREE.MathUtils.degToRad(
-        (camera as THREE.PerspectiveCamera).fov
-      ); // convert vertical fov to radians
+      const vFOV =
+        THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov) * 0.3; // convert vertical fov to radians
 
       const height = 2 * Math.tan(vFOV / 2) * distance; // visible height
-      const width = height * (camera as THREE.PerspectiveCamera).aspect;
-      const physicalWidthInMeters = width * 0.75;
+      const width =
+        height * (camera as THREE.PerspectiveCamera).aspect * (0.75 / 0.3);
       document.getElementById(
         "scanner-text"
-      )!.innerText = `Physical Width: ${physicalWidthInMeters.toFixed(3)}m`;
+      )!.innerText = `Physical Width: ${width.toFixed(3)}m`;
+
+      console.log(viewerPose.transform.orientation);
+      console.log(hitTestPose.transform.orientation);
     }
   });
 
@@ -1154,7 +1156,7 @@ function ImageScanOverlay() {
           id="scanner-overlay"
           style={{
             width: "75%",
-            paddingTop: "50%",
+            height: "30%",
             backgroundColor: "rgba(0, 0, 0, 0.3)",
             border: "5px solid red",
           }}
