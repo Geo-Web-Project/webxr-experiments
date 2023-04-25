@@ -12,7 +12,7 @@ function App({ ipfsP }: { ipfsP: any }) {
   const rootCIDStr =
     hash.length > 0
       ? hash.replace("#", "")
-      : "baguqeerah2hz6d34lkfq4ffbky4bpdr6gb3nnvwg6w3qtv7bm2pmcbaxh7zq";
+      : "baguqeeraepa4uxjuyk5sfqenyj4gl757caxz5rifoybhip6wq6drifk5bvfa";
   const [ipfs, setIpfs] = React.useState<IPFS | null>(null);
   const [arPackage, setArPackage] = React.useState<World | null>(null);
 

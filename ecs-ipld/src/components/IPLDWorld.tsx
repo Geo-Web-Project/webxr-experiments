@@ -690,7 +690,6 @@ const RaycastSystem = ({
   hitTestSource: XRHitTestSource | null;
 }) => {
   const query = useQuery((e) => e.hasAll(Raycast, Position, Rotation));
-  const { camera } = useThree();
   useFrame((_1, _2, frame: XRFrame) => {
     if (!frame || !hitTestSource || !refSpace) return;
 
@@ -719,24 +718,6 @@ const RaycastSystem = ({
 
           position.startPosition = newStartPosition;
           rotation.startRotation = newStartRotation;
-
-          const viewerPosition = new Vector3(
-            viewerPose.transform.position.x,
-            viewerPose.transform.position.y,
-            viewerPose.transform.position.z
-          );
-          const distance = viewerPosition.distanceTo(newStartPosition);
-          console.log("distance: ", distance);
-
-          const vFOV = THREE.MathUtils.degToRad(
-            (camera as THREE.PerspectiveCamera).fov
-          ); // convert vertical fov to radians
-
-          const height = 2 * Math.tan(vFOV / 2) * distance; // visible height
-          const width = height * (camera as THREE.PerspectiveCamera).aspect;
-
-          console.log("height: ", height);
-          console.log("width: ", width);
         } else {
           position.startPosition = null;
           rotation.startRotation = null;
@@ -846,18 +827,8 @@ const ImageScanSystem = ({
       )!.innerText = `Physical Width: ${width.toFixed(3)}m`;
       document.getElementById("scanner-button")!.removeAttribute("disabled");
 
-      const testPlanePos = testPlane.get(Position)!;
       const testPlaneScale = testPlane.get(Scale)!;
-      const testPlaneRot = testPlane.get(Rotation)!;
 
-      testPlanePos.position = hitTestPosition;
-      testPlaneRot.rotation = new Quaternion(
-        hitTestPose.transform.orientation.x,
-        viewerPose.transform.orientation.y,
-        hitTestPose.transform.orientation.z,
-        hitTestPose.transform.orientation.w
-      ).multiply(new Quaternion(-0.7071067, 0, 0, 0.7071069));
-      console.log(testPlaneRot.rotation);
       testPlaneScale.scale = new Vector3(width, height, 1);
       testPlaneVisibility.isVisible = true;
     } else {
@@ -1346,12 +1317,33 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
               <ImageScanTestPlane />
               <Visibility isVisible={false} />
               <Scale {...({} as any)} />
-              <Rotation {...({} as any)} />
+              <Rotation
+                startRotation={new Quaternion(-0.7071067, 0, 0, 0.7071069)}
+              />
               <Position {...({} as any)} />
+              <Anchor
+                rotation={{
+                  x: CID.parse(
+                    "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
+                  ),
+                  y: CID.parse(
+                    "baguqeeratxkttqj7fdlcdkqhmj7sqfimi2lsihmnvn62nil3toj7romm7nfq"
+                  ),
+                  z: CID.parse(
+                    "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
+                  ),
+                  w: CID.parse(
+                    "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
+                  ),
+                }}
+                position={CID.parse(
+                  "baguqeera7rtolglmtyhpjpnwanso3kjvhals4cyfxvlzpz727bmkz25x53ha"
+                )}
+              />
               <ThreeView>
                 <mesh>
                   <planeGeometry args={[1, 1]} />
-                  <meshStandardMaterial color={"orange"} opacity={0.5} />
+                  <meshStandardMaterial color={"orange"} />
                 </mesh>
               </ThreeView>
             </Entity>
