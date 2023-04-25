@@ -99,6 +99,8 @@ class Raycast extends Facet<Raycast> {
 
 class ViewerPose extends Facet<ViewerPose> {}
 
+class ImageScanTestPlane extends Facet<ImageScanTestPlane> {}
+
 type TrackedImageProps = {
   image: ImageBitmap;
   widthInMeters: number;
@@ -798,6 +800,7 @@ const ImageScanSystem = ({
   refSpace: XRReferenceSpace | null;
   hitTestSource: XRHitTestSource | null;
 }) => {
+  const query = useQuery((e) => e.hasAll(ImageScanTestPlane));
   const { camera } = useThree();
 
   useFrame((_1, _2, frame: XRFrame) => {
@@ -811,6 +814,9 @@ const ImageScanSystem = ({
 
     const hitTestPose =
       hitTestResults.length > 0 ? hitTestResults[0].getPose(refSpace) : null;
+
+    const testPlane = query.first;
+    const testPlaneVisibility = testPlane.get(Visibility)!;
 
     if (hitTestPose) {
       const hitTestPosition = new Vector3(
@@ -827,17 +833,33 @@ const ImageScanSystem = ({
       const distance = viewerPosition.distanceTo(hitTestPosition);
 
       const vFOV =
-        THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov) * 0.3; // convert vertical fov to radians
+        THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov) *
+        0.25; // convert vertical fov to radians
 
       const height = 2 * Math.tan(vFOV / 2) * distance; // visible height
       const width =
-        height * (camera as THREE.PerspectiveCamera).aspect * (0.75 / 0.3);
+        height * (camera as THREE.PerspectiveCamera).aspect * (0.75 / 0.25);
       document.getElementById("scanner-overlay")!.style.border =
         "solid 5px green";
       document.getElementById(
         "scanner-text"
       )!.innerText = `Physical Width: ${width.toFixed(3)}m`;
       document.getElementById("scanner-button")!.removeAttribute("disabled");
+
+      const testPlanePos = testPlane.get(Position)!;
+      const testPlaneScale = testPlane.get(Scale)!;
+      const testPlaneRot = testPlane.get(Rotation)!;
+
+      testPlanePos.position = hitTestPosition;
+      testPlaneRot.rotation = new Quaternion(
+        hitTestPose.transform.orientation.x,
+        viewerPose.transform.orientation.y,
+        hitTestPose.transform.orientation.z,
+        hitTestPose.transform.orientation.w
+      ).multiply(new Quaternion(-0.7071067, 0, 0, 0.7071069));
+      console.log(testPlaneRot.rotation);
+      testPlaneScale.scale = new Vector3(width, height, 1);
+      testPlaneVisibility.isVisible = true;
     } else {
       document.getElementById("scanner-overlay")!.style.border =
         "solid 5px red";
@@ -845,6 +867,8 @@ const ImageScanSystem = ({
       document
         .getElementById("scanner-button")!
         .setAttribute("disabled", "true");
+
+      testPlaneVisibility.isVisible = false;
     }
   });
 
@@ -1165,7 +1189,7 @@ function ImageScanOverlay() {
           id="scanner-overlay"
           style={{
             width: "75%",
-            height: "30%",
+            height: "25%",
             backgroundColor: "rgba(0, 0, 0, 0.3)",
             border: "5px solid red",
           }}
@@ -1317,47 +1341,24 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
             setTrackedImages={setTrackedImages}
             showWorld={showWorld}
             setShowWorld={setShowWorld}
-          ></IPLDWorldCanvas>
+          >
+            <Entity>
+              <ImageScanTestPlane />
+              <Visibility isVisible={false} />
+              <Scale {...({} as any)} />
+              <Rotation {...({} as any)} />
+              <Position {...({} as any)} />
+              <ThreeView>
+                <mesh>
+                  <planeGeometry args={[1, 1]} />
+                  <meshStandardMaterial color={"orange"} opacity={0.5} />
+                </mesh>
+              </ThreeView>
+            </Entity>
+          </IPLDWorldCanvas>
         </Canvas>
       }
       <Stats showPanel={0} className="stats" parent={overlayRef} />
     </ECS.Provider>
   );
-}
-
-function useUserMedia(requestedMedia: MediaStreamConstraints) {
-  const [mediaStream, setMediaStream] = React.useState<MediaStream | null>(
-    null
-  );
-  const [imageCapture, setImageCapture] = React.useState<ImageCapture | null>(
-    null
-  );
-
-  React.useEffect(() => {
-    async function enableStream() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia(
-          requestedMedia
-        );
-        const imageCapture = new ImageCapture(stream.getVideoTracks()[0]);
-        setMediaStream(stream);
-        setImageCapture(imageCapture);
-      } catch (err) {
-        // Removed for brevity
-        console.error(err);
-      }
-    }
-
-    if (!mediaStream) {
-      enableStream();
-    } else {
-      return function cleanup() {
-        mediaStream.getTracks().forEach((track) => {
-          track.stop();
-        });
-      };
-    }
-  }, [mediaStream, requestedMedia]);
-
-  return { mediaStream, imageCapture };
 }
