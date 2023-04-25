@@ -813,11 +813,11 @@ const ImageScanSystem = ({
 
       const distance = viewerPosition.distanceTo(hitTestPosition);
 
-      const vFOV =
-        THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov) *
-        0.25; // convert vertical fov to radians
+      const vFOV = THREE.MathUtils.degToRad(
+        (camera as THREE.PerspectiveCamera).fov
+      ); // convert vertical fov to radians
 
-      const height = 2 * Math.tan(vFOV / 2) * distance; // visible height
+      const height = 2 * Math.tan(vFOV / 2) * distance * 0.25; // visible height
       const width =
         height * (camera as THREE.PerspectiveCamera).aspect * (0.75 / 0.25);
       document.getElementById("scanner-overlay")!.style.border =
