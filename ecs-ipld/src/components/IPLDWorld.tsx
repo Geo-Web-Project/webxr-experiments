@@ -71,6 +71,7 @@ class Anchor extends Facet<Anchor> {
   anchor?: CID = undefined;
   position?: CID | VectorAnchor = undefined;
   rotation?: CID | QuaternionAnchor = undefined;
+  scale?: CID | VectorAnchor = undefined;
 }
 
 class IsAnchor extends Facet<IsAnchor> {
@@ -99,8 +100,6 @@ class Raycast extends Facet<Raycast> {
 }
 
 class ViewerPose extends Facet<ViewerPose> { }
-
-class ImageScanTestPlane extends Facet<ImageScanTestPlane> { }
 
 type TrackedImageProps = {
   image: ImageBitmap;
@@ -139,7 +138,7 @@ type EntityData = {
   isAnchor?: Boolean;
   trackedImage?: TrackedImageComponent;
   detectedPlane?: "horizontal" | "vertical";
-  anchor?: CID | { position?: VectorAnchor; rotation?: QuaternionAnchor };
+  anchor?: CID | { position?: VectorAnchor; rotation?: QuaternionAnchor; scale?: VectorAnchor };
 };
 
 /*
@@ -169,18 +168,19 @@ const GLTFSystem = () => {
  */
 const AnchorTransformSystem = () => {
   const query = useQuery((e) =>
-    e.hasAll(Anchor, Position, Rotation, Visibility)
+    e.hasAll(Anchor, Position, Rotation, Scale, Visibility)
   );
   const anchorQuery = useQuery((e) =>
-    e.hasAll(IsAnchor, CIDFacet, Position, Rotation)
+    e.hasAll(IsAnchor, CIDFacet, Position, Rotation, Scale)
   );
 
   return useSystem((_: number) => {
     query.loop(
-      [Anchor, Position, Rotation, Visibility],
-      (_, [anchor, position, rotation, visibility]) => {
+      [Anchor, Position, Rotation, Scale, Visibility],
+      (_, [anchor, position, rotation, scale, visibility]) => {
         if (!position.startPosition) return;
         if (!rotation.startRotation) return;
+        if (!scale.startScale) return;
 
         const getAnchor = (anchorCID: CID) => {
           const results = anchorQuery.filter(
@@ -199,6 +199,10 @@ const AnchorTransformSystem = () => {
         let anchorRotationZCID: CID | undefined;
         let anchorRotationWCID: CID | undefined;
 
+        let anchorScaleXCID: CID | undefined;
+        let anchorScaleYCID: CID | undefined;
+        let anchorScaleZCID: CID | undefined;
+
         // 1. Anchor.anchor
         // 2. Anchor.position
         // 3. Anchor.position.coord
@@ -210,6 +214,9 @@ const AnchorTransformSystem = () => {
           anchorRotationYCID = anchor.anchor;
           anchorRotationZCID = anchor.anchor;
           anchorRotationWCID = anchor.anchor;
+          anchorScaleXCID = anchor.anchor;
+          anchorScaleYCID = anchor.anchor;
+          anchorScaleZCID = anchor.anchor;
         } else {
           if (anchor.position instanceof CID) {
             anchorPositionXCID = anchor.position;
@@ -231,6 +238,16 @@ const AnchorTransformSystem = () => {
             anchorRotationYCID = anchor.rotation.y;
             anchorRotationZCID = anchor.rotation.z;
             anchorRotationWCID = anchor.rotation.w;
+          }
+
+          if (anchor.scale instanceof CID) {
+            anchorScaleXCID = anchor.scale;
+            anchorScaleYCID = anchor.scale;
+            anchorScaleZCID = anchor.scale;
+          } else if (anchor.scale) {
+            anchorScaleXCID = anchor.scale.x;
+            anchorScaleYCID = anchor.scale.y;
+            anchorScaleZCID = anchor.scale.z;
           }
         }
 
@@ -259,6 +276,16 @@ const AnchorTransformSystem = () => {
           ? getAnchor(anchorRotationWCID)
           : undefined;
 
+        const anchorScaleX = anchorScaleXCID
+          ? getAnchor(anchorScaleXCID)
+          : undefined;
+        const anchorScaleY = anchorScaleYCID
+          ? getAnchor(anchorScaleYCID)
+          : undefined;
+        const anchorScaleZ = anchorScaleZCID
+          ? getAnchor(anchorScaleZCID)
+          : undefined;
+
         if (
           anchorPositionX ||
           anchorPositionY ||
@@ -266,7 +293,10 @@ const AnchorTransformSystem = () => {
           anchorRotationX ||
           anchorRotationY ||
           anchorRotationZ ||
-          anchorRotationW
+          anchorRotationW ||
+          anchorScaleX ||
+          anchorScaleY ||
+          anchorScaleZ
         ) {
           const newPosition = new Vector3(
             anchorPositionX?.get(Position)?.position?.x ??
@@ -295,10 +325,23 @@ const AnchorTransformSystem = () => {
             1
           );
 
+          const newScale = new Vector3(
+            anchorScaleX?.get(Scale)?.scale?.x ??
+            anchorScaleX?.get(Scale)?.startScale?.x ??
+            1,
+            anchorScaleY?.get(Scale)?.scale?.y ??
+            anchorScaleY?.get(Scale)?.startScale?.y ??
+            1,
+            anchorScaleZ?.get(Scale)?.scale?.z ??
+            anchorScaleZ?.get(Scale)?.startScale?.z ??
+            1
+          );
+
           rotation.rotation = newRotation.multiply(rotation.startRotation);
           position.position = newPosition.add(
             position.startPosition.clone().applyQuaternion(newRotation)
           );
+          scale.scale = newScale.multiply(scale.startScale);
 
           const shouldShow = [
             anchorPositionX,
@@ -308,12 +351,16 @@ const AnchorTransformSystem = () => {
             anchorRotationY,
             anchorRotationZ,
             anchorRotationW,
+            anchorScaleX,
+            anchorScaleY,
+            anchorScaleZ
           ].reduce((prev, cur) => {
             return (
               prev &&
               (cur
                 ? cur.get(Position)?.startPosition !== null &&
-                cur.get(Rotation)?.startRotation !== null
+                cur.get(Rotation)?.startRotation !== null &&
+                cur.get(Scale)?.startScale !== null
                 : true)
             );
           }, true);
@@ -471,6 +518,9 @@ const ImageTrackingSystem = ({
   refSpace: XRReferenceSpace | null;
   ipfs: IPFS;
 }) => {
+
+  const { session } = useXR();
+
   const query = useQuery((e) => e.hasAll(TrackedImage, Position, Rotation), {
     added: (e) => {
       const v = e.current.get(TrackedImage)!;
@@ -535,7 +585,7 @@ const ImageTrackingSystem = ({
   });
 
   useFrame((_1, _2, frame: any) => {
-    if (!frame) return;
+    if (!frame || !session || !(session as any).enabledFeatures.includes("image-tracking")) return;
 
     const imageTrackingResults: any[] = frame.getImageTrackingResults();
 
@@ -606,10 +656,12 @@ const PlaneDetectionSystem = ({
 }: {
   refSpace: XRReferenceSpace | null;
 }) => {
+  const { session } = useXR();
+
   const query = useQuery((e) => e.hasAll(DetectedPlane, Position, Rotation));
 
   useFrame((_1, _2, frame: any) => {
-    if (!frame) return;
+    if (!frame || !session || !(session as any).enabledFeatures.includes("plane-detection")) return;
 
     const detectedPlanes: XRPlaneSet = frame.detectedPlanes;
 
@@ -1132,6 +1184,10 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
             {...rotation}
             startRotation={rotation.startRotation ?? null}
           />
+          <Scale
+            {...scale}
+            startScale={scale.startScale ?? null}
+          />
         </>
       ) : null}
       {entityData.detectedPlane ? (
@@ -1144,6 +1200,10 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           <Rotation
             {...rotation}
             startRotation={rotation.startRotation ?? null}
+          />
+          <Scale
+            {...scale}
+            startScale={scale.startScale ?? null}
           />
         </>
       ) : null}
@@ -1173,6 +1233,10 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
             {...rotation}
             startRotation={rotation.startRotation ?? null}
           />
+          <Scale
+            {...scale}
+            startScale={scale.startScale ?? null}
+          />
         </>
       ) : null}
       {entityData.viewerPose == true ? (
@@ -1185,6 +1249,10 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
           <Rotation
             {...rotation}
             startRotation={rotation.startRotation ?? null}
+          />
+          <Scale
+            {...scale}
+            startScale={scale.startScale ?? null}
           />
         </>
       ) : null}
@@ -1358,7 +1426,16 @@ export default function IPLDWorld({ ipfs }: IPLDSceneProps) {
       if (imageToTrack) {
         const testObject = {
           anchor: imageToTrack,
-          glTFModel: CID.parse("QmdPXtkGThsWvR1YKg4QVSR9n8oHMPmpBEnyyV8Tk638o9")
+          rotation: {
+            x: -0.7071067,
+            y: 0,
+            z: 0,
+            w: 0.7071069
+          },
+          plane: {
+            width: 0.3,
+            height: 0.3
+          }
         }
 
         // Add object to IPFS as dag-json
@@ -1425,40 +1502,6 @@ export default function IPLDWorld({ ipfs }: IPLDSceneProps) {
             setShouldTakeImage={setShouldTakeImage}
             setImageToTrack={setImageToTrack}
           >
-            {/* <Entity>
-              <ImageScanTestPlane />
-              <Visibility isVisible={false} />
-              <Scale {...({} as any)} />
-              <Rotation
-                startRotation={new Quaternion(-0.7071067, 0, 0, 0.7071069)}
-              />
-              <Position {...({} as any)} />
-              <Anchor
-                rotation={{
-                  x: CID.parse(
-                    "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
-                  ),
-                  y: CID.parse(
-                    "baguqeeratxkttqj7fdlcdkqhmj7sqfimi2lsihmnvn62nil3toj7romm7nfq"
-                  ),
-                  z: CID.parse(
-                    "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
-                  ),
-                  w: CID.parse(
-                    "baguqeeracattsfk2zgebsu6hpuiugafopk74mnym37jpxjj3bamsutic7y3q"
-                  ),
-                }}
-                position={CID.parse(
-                  "baguqeera7rtolglmtyhpjpnwanso3kjvhals4cyfxvlzpz727bmkz25x53ha"
-                )}
-              />
-              <ThreeView>
-                <mesh>
-                  <planeGeometry args={[1, 1]} />
-                  <meshStandardMaterial color={"orange"} />
-                </mesh>
-              </ThreeView>
-            </Entity> */}
           </IPLDWorldCanvas>
         </Canvas>
       }
