@@ -12,7 +12,7 @@ function App({ ipfsP }: { ipfsP: any }) {
   const rootCIDStr =
     hash.length > 0
       ? hash.replace("#", "")
-      : "baguqeeraepa4uxjuyk5sfqenyj4gl757caxz5rifoybhip6wq6drifk5bvfa";
+      : undefined;
   const [ipfs, setIpfs] = React.useState<IPFS | null>(null);
   const [arPackage, setArPackage] = React.useState<World | null>(null);
 
@@ -26,6 +26,11 @@ function App({ ipfsP }: { ipfsP: any }) {
   React.useEffect(() => {
     (async () => {
       if (!ipfs) return;
+
+      if (!rootCIDStr) {
+        setArPackage([]);
+        return;
+      }
 
       let result;
 

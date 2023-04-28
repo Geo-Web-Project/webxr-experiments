@@ -12,10 +12,10 @@ import {
   useAnimationFrame,
 } from "@react-ecs/core";
 import { ThreeView } from "@react-ecs/three";
-import { Entity, Facet, DOMView } from "@react-ecs/core";
+import { Entity, Facet } from "@react-ecs/core";
 import { Vector3, Quaternion } from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ARButton, XR } from "@react-three/xr";
+import { ARButton, XR, useXR } from "@react-three/xr";
 import { CarReader } from "@ipld/car/reader";
 import { Stats, Plane } from "@react-three/drei";
 import * as THREE from "three";
@@ -97,9 +97,9 @@ class Raycast extends Facet<Raycast> {
   direction: Vector3 = new Vector3(0, 0, -1);
 }
 
-class ViewerPose extends Facet<ViewerPose> {}
+class ViewerPose extends Facet<ViewerPose> { }
 
-class ImageScanTestPlane extends Facet<ImageScanTestPlane> {}
+class ImageScanTestPlane extends Facet<ImageScanTestPlane> { }
 
 type TrackedImageProps = {
   image: ImageBitmap;
@@ -158,7 +158,7 @@ const GLTFSystem = () => {
     },
   });
 
-  return useSystem((_: number) => {});
+  return useSystem((_: number) => { });
 };
 
 /*
@@ -269,29 +269,29 @@ const AnchorTransformSystem = () => {
         ) {
           const newPosition = new Vector3(
             anchorPositionX?.get(Position)?.position?.x ??
-              anchorPositionX?.get(Position)?.startPosition?.x ??
-              0,
+            anchorPositionX?.get(Position)?.startPosition?.x ??
+            0,
             anchorPositionY?.get(Position)?.position?.y ??
-              anchorPositionY?.get(Position)?.startPosition?.y ??
-              0,
+            anchorPositionY?.get(Position)?.startPosition?.y ??
+            0,
             anchorPositionZ?.get(Position)?.position?.z ??
-              anchorPositionZ?.get(Position)?.startPosition?.z ??
-              0
+            anchorPositionZ?.get(Position)?.startPosition?.z ??
+            0
           );
 
           const newRotation = new Quaternion(
             anchorRotationX?.get(Rotation)?.rotation?.x ??
-              anchorRotationX?.get(Rotation)?.startRotation?.x ??
-              0,
+            anchorRotationX?.get(Rotation)?.startRotation?.x ??
+            0,
             anchorRotationY?.get(Rotation)?.rotation?.y ??
-              anchorRotationY?.get(Rotation)?.startRotation?.y ??
-              0,
+            anchorRotationY?.get(Rotation)?.startRotation?.y ??
+            0,
             anchorRotationZ?.get(Rotation)?.rotation?.z ??
-              anchorRotationZ?.get(Rotation)?.startRotation?.z ??
-              0,
+            anchorRotationZ?.get(Rotation)?.startRotation?.z ??
+            0,
             anchorRotationW?.get(Rotation)?.rotation?.w ??
-              anchorRotationW?.get(Rotation)?.startRotation?.w ??
-              1
+            anchorRotationW?.get(Rotation)?.startRotation?.w ??
+            1
           );
 
           rotation.rotation = newRotation.multiply(rotation.startRotation);
@@ -312,7 +312,7 @@ const AnchorTransformSystem = () => {
               prev &&
               (cur
                 ? cur.get(Position)?.startPosition !== null &&
-                  cur.get(Rotation)?.startRotation !== null
+                cur.get(Rotation)?.startRotation !== null
                 : true)
             );
           }, true);
@@ -450,7 +450,7 @@ const IsAnchorSystem = ({
     );
   });
 
-  return useSystem((_: number) => {});
+  return useSystem((_: number) => { });
 };
 
 /*
@@ -676,7 +676,7 @@ const PlaneDetectionSystem = ({
     );
   });
 
-  return useSystem((_: number) => {});
+  return useSystem((_: number) => { });
 };
 
 /*
@@ -726,7 +726,7 @@ const RaycastSystem = ({
     }
   });
 
-  return useSystem((_: number) => {});
+  return useSystem((_: number) => { });
 };
 
 /*
@@ -768,7 +768,7 @@ const ViewerPoseSystem = ({
     });
   });
 
-  return useSystem((_: number) => {});
+  return useSystem((_: number) => { });
 };
 
 /*
@@ -777,12 +777,17 @@ const ViewerPoseSystem = ({
 const ImageScanSystem = ({
   refSpace,
   hitTestSource,
+  shouldTakeImage,
+  setShouldTakeImage,
 }: {
   refSpace: XRReferenceSpace | null;
   hitTestSource: XRHitTestSource | null;
+  shouldTakeImage: boolean;
+  setShouldTakeImage: (_: boolean) => void;
 }) => {
   const query = useQuery((e) => e.hasAll(ImageScanTestPlane));
-  const { camera } = useThree();
+  const { camera, gl: glRenderer } = useThree();
+  const { session } = useXR();
 
   useFrame((_1, _2, frame: XRFrame) => {
     if (!frame || !hitTestSource || !refSpace) return;
@@ -793,11 +798,84 @@ const ImageScanSystem = ({
     const viewerPose = frame.getViewerPose(refSpace);
     if (!viewerPose) return;
 
+    const view = viewerPose.views.length > 0 ? viewerPose.views[0] : undefined;
+
+    if (
+      view &&
+      session &&
+      glRenderer.getContextAttributes().xrCompatible &&
+      shouldTakeImage
+    ) {
+      setShouldTakeImage(false);
+
+      const cam = (view as any).camera;
+
+      const gl = glRenderer.getContext();
+      const glBinding = new XRWebGLBinding(session, gl);
+      const cameraTexture: WebGLTexture = (glBinding as any).getCameraImage(cam);
+
+      const prev_framebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(
+        gl.FRAMEBUFFER,
+        gl.COLOR_ATTACHMENT0,
+        gl.TEXTURE_2D,
+        cameraTexture,
+        0
+      );
+
+      const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+      if (status !== gl.FRAMEBUFFER_COMPLETE) {
+        console.error("Error creating framebuffer:", status);
+        return;
+      }
+
+      // Read the pixels from the framebuffer
+      const pixels = new Uint8Array(cam.width * cam.height * 4);
+      gl.readPixels(
+        0,
+        0,
+        cam.width,
+        cam.height,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixels
+      );
+      gl.deleteFramebuffer(framebuffer);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, prev_framebuffer);
+
+      // Draw the pixels to a 2D canvas
+
+      // Get the "capture-canvas"
+      const imageCanvas = document.createElement(
+        "canvas"
+      ) as HTMLCanvasElement;
+      imageCanvas.width = cam.width;
+      imageCanvas.height = cam.height;
+      const context = imageCanvas.getContext("2d");
+      const imageData = context!.createImageData(cam.width, cam.height);
+      imageData.data.set(pixels);
+      context!.putImageData(imageData, 0, 0);
+
+      // Flip image vertically
+      context!.translate(0, cam.height);
+      context!.scale(1, -1);
+      context!.drawImage(imageCanvas, 0, 0);
+
+      const dataUrl = imageCanvas.toDataURL("image/png");
+
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = "test-image.png";
+      link.click();
+    }
+
     const hitTestPose =
       hitTestResults.length > 0 ? hitTestResults[0].getPose(refSpace) : null;
 
-    const testPlane = query.first;
-    const testPlaneVisibility = testPlane.get(Visibility)!;
+    const testPlane = query.length > 0 ? query.first : undefined;
+    const testPlaneVisibility = testPlane?.get(Visibility);
 
     if (hitTestPose) {
       const hitTestPosition = new Vector3(
@@ -827,10 +905,14 @@ const ImageScanSystem = ({
       )!.innerText = `Physical Width: ${width.toFixed(3)}m`;
       document.getElementById("scanner-button")!.removeAttribute("disabled");
 
-      const testPlaneScale = testPlane.get(Scale)!;
+      const testPlaneScale = testPlane?.get(Scale);
 
-      testPlaneScale.scale = new Vector3(width, height, 1);
-      testPlaneVisibility.isVisible = true;
+      if (testPlaneScale) {
+        testPlaneScale.scale = new Vector3(width, height, 1);
+      }
+      if (testPlaneVisibility) {
+        testPlaneVisibility.isVisible = true;
+      }
     } else {
       document.getElementById("scanner-overlay")!.style.border =
         "solid 5px red";
@@ -839,11 +921,13 @@ const ImageScanSystem = ({
         .getElementById("scanner-button")!
         .setAttribute("disabled", "true");
 
-      testPlaneVisibility.isVisible = false;
+      if (testPlaneVisibility) {
+        testPlaneVisibility.isVisible = false;
+      }
     }
   });
 
-  return useSystem((_: number) => {});
+  return useSystem((_: number) => { });
 };
 
 function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
@@ -893,13 +977,13 @@ function Model({ ipfs, entityCID }: { ipfs: IPFS; entityCID: CID }) {
         const loader = new GLTFLoader();
         loader.load(
           `${IPFS_GATEWAY_HOST}/ipfs/${entityData.glTFModel.toString()}`,
-          function (_gltf) {
+          function(_gltf) {
             setGltf(_gltf);
           },
-          function (xhr) {
+          function(xhr) {
             console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
           },
-          function (error) {
+          function(error) {
             console.error(error);
             setGltf(null);
           }
@@ -1072,6 +1156,8 @@ type IPLDWorldCanvasProps = IPLDSceneProps & {
   showWorld: boolean;
   setShowWorld: (i: boolean) => void;
   children?: React.ReactNode;
+  shouldTakeImage: boolean;
+  setShouldTakeImage: (_: boolean) => void;
 };
 
 function IPLDWorldCanvas({
@@ -1082,6 +1168,8 @@ function IPLDWorldCanvas({
   showWorld,
   setShowWorld,
   children,
+  shouldTakeImage,
+  setShouldTakeImage,
 }: IPLDWorldCanvasProps) {
   const [refSpace, setRefSpace] = React.useState<XRReferenceSpace | null>(null);
   const [hitTestSource, setHitTestSource] =
@@ -1131,7 +1219,12 @@ function IPLDWorldCanvas({
       />
       <PlaneDetectionSystem refSpace={refSpace} />
       <RaycastSystem refSpace={refSpace} hitTestSource={hitTestSource} />
-      <ImageScanSystem refSpace={refSpace} hitTestSource={hitTestSource} />
+      <ImageScanSystem
+        refSpace={refSpace}
+        hitTestSource={hitTestSource}
+        shouldTakeImage={shouldTakeImage}
+        setShouldTakeImage={setShouldTakeImage}
+      />
       <ViewerPoseSystem refSpace={refSpace} />
       {arPackage.map((entityCID) => {
         return (
@@ -1143,7 +1236,11 @@ function IPLDWorldCanvas({
   );
 }
 
-function ImageScanOverlay() {
+function ImageScanOverlay({
+  setShouldTakeImage,
+}: {
+  setShouldTakeImage: (_: boolean) => void;
+}) {
   return (
     <>
       <div
@@ -1184,40 +1281,9 @@ function ImageScanOverlay() {
             zIndex: "99999",
             cursor: "pointer",
           }}
-          onTouchEnd={() => {
-            const video = document.getElementById(
-              "capture-video"
-            ) as HTMLVideoElement;
-
-            const canvas = document.createElement(
-              "canvas"
-            ) as HTMLCanvasElement;
-
-            console.log(video.width);
-            console.log(video.height);
-
-            console.log(video.videoWidth);
-            console.log(video.videoHeight);
-
-            video.width = video.videoWidth;
-            video.height = video.videoHeight;
-
-            const context = canvas.getContext("2d");
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            context!.drawImage(
-              video,
-              0,
-              0,
-              video.videoWidth,
-              video.videoHeight
-            );
-            const dataUrl = canvas.toDataURL("image/png");
-
-            const link = document.createElement("a");
-            link.href = dataUrl;
-            link.download = "test-image.png";
-            link.click();
+          onTouchEnd={(e) => {
+            setShouldTakeImage(true);
+            e.preventDefault();
           }}
         >
           Take Image
@@ -1236,47 +1302,46 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
     TrackedImageProps[] | null
   >(null);
   const [showWorld, setShowWorld] = React.useState(false);
-  // const [imageCapture, setImageCapture] = React.useState<ImageCapture | null>(
-  //   null
-  // );
+  const [shouldTakeImage, setShouldTakeImage] = React.useState(false);
 
   const overlayRef = React.useRef(document.createElement("div"));
 
-  React.useEffect(() => {
-    async function enableStream() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-            aspectRatio: window.innerHeight / window.innerWidth,
-          },
-        });
-        // const imageCapture = new ImageCapture(stream.getVideoTracks()[0]);
-
-        const video = document.getElementById(
-          "capture-video"
-        ) as HTMLVideoElement;
-
-        if (!video) return;
-
-        video.autoplay = true;
-        video.srcObject = stream;
-
-        // setImageCapture(imageCapture);
-      } catch (err) {
-        // Removed for brevity
-        console.error(err);
-      }
-    }
-
-    enableStream();
-  }, []);
+  //   React.useEffect(() => {
+  //     async function enableStream() {
+  //       try {
+  //         const stream = await navigator.mediaDevices.getUserMedia({
+  //           video: {
+  //             facingMode: "environment",
+  //             aspectRatio: window.innerHeight / window.innerWidth,
+  //           },
+  //         });
+  //         // const imageCapture = new ImageCapture(stream.getVideoTracks()[0]);
+  //
+  //         const video = document.getElementById(
+  //           "capture-video"
+  //         ) as HTMLVideoElement;
+  //
+  //         if (!video) return;
+  //
+  //         video.autoplay = true;
+  //         video.srcObject = stream;
+  //
+  //         // setImageCapture(imageCapture);
+  //       } catch (err) {
+  //         // Removed for brevity
+  //         console.error(err);
+  //       }
+  //     }
+  //
+  //     enableStream();
+  //   }, []);
 
   return (
     <ECS.Provider>
-      <video id="capture-video" hidden />
       <div id="overlay" ref={overlayRef}>
-        {showWorld ? <ImageScanOverlay /> : null}
+        {showWorld ? (
+          <ImageScanOverlay setShouldTakeImage={setShouldTakeImage} />
+        ) : null}
         {trackedImages ? (
           <ARButton
             sessionInit={
@@ -1286,10 +1351,16 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
                   "hit-test",
                   "anchors",
                   "dom-overlay",
+                  "camera-access",
+                  "depth-sensing",
                 ],
                 optionalFeatures: ["plane-detection", "image-tracking"],
                 trackedImages: trackedImages,
                 domOverlay: { root: document.getElementById("overlay") },
+                depthSensing: {
+                  usagePreference: ["cpu-optimized"],
+                  dataFormatPreference: ["luminance-alpha"],
+                },
               } as any
             }
           />
@@ -1312,8 +1383,10 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
             setTrackedImages={setTrackedImages}
             showWorld={showWorld}
             setShowWorld={setShowWorld}
+            shouldTakeImage={shouldTakeImage}
+            setShouldTakeImage={setShouldTakeImage}
           >
-            <Entity>
+            {/* <Entity>
               <ImageScanTestPlane />
               <Visibility isVisible={false} />
               <Scale {...({} as any)} />
@@ -1346,7 +1419,7 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
                   <meshStandardMaterial color={"orange"} />
                 </mesh>
               </ThreeView>
-            </Entity>
+            </Entity> */}
           </IPLDWorldCanvas>
         </Canvas>
       }
