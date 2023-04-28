@@ -798,84 +798,8 @@ const ImageScanSystem = ({
     const viewerPose = frame.getViewerPose(refSpace);
     if (!viewerPose) return;
 
-    const view = viewerPose.views.length > 0 ? viewerPose.views[0] : undefined;
-
-    if (
-      view &&
-      session &&
-      glRenderer.getContextAttributes().xrCompatible &&
-      shouldTakeImage
-    ) {
-      setShouldTakeImage(false);
-
-      const cam = (view as any).camera;
-
-      const gl = glRenderer.getContext();
-      const glBinding = new XRWebGLBinding(session, gl);
-      const cameraTexture: WebGLTexture = (glBinding as any).getCameraImage(cam);
-
-      const prev_framebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-      const framebuffer = gl.createFramebuffer();
-      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-      gl.framebufferTexture2D(
-        gl.FRAMEBUFFER,
-        gl.COLOR_ATTACHMENT0,
-        gl.TEXTURE_2D,
-        cameraTexture,
-        0
-      );
-
-      const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-      if (status !== gl.FRAMEBUFFER_COMPLETE) {
-        console.error("Error creating framebuffer:", status);
-        return;
-      }
-
-      // Read the pixels from the framebuffer
-      const pixels = new Uint8Array(cam.width * cam.height * 4);
-      gl.readPixels(
-        0,
-        0,
-        cam.width,
-        cam.height,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixels
-      );
-      gl.deleteFramebuffer(framebuffer);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, prev_framebuffer);
-
-      // Draw the pixels to a 2D canvas
-
-      // Get the "capture-canvas"
-      const imageCanvas = document.createElement(
-        "canvas"
-      ) as HTMLCanvasElement;
-      imageCanvas.width = cam.width;
-      imageCanvas.height = cam.height;
-      const context = imageCanvas.getContext("2d");
-      const imageData = context!.createImageData(cam.width, cam.height);
-      imageData.data.set(pixels);
-      context!.putImageData(imageData, 0, 0);
-
-      // Flip image vertically
-      context!.translate(0, cam.height);
-      context!.scale(1, -1);
-      context!.drawImage(imageCanvas, 0, 0);
-
-      const dataUrl = imageCanvas.toDataURL("image/png");
-
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = "test-image.png";
-      link.click();
-    }
-
     const hitTestPose =
       hitTestResults.length > 0 ? hitTestResults[0].getPose(refSpace) : null;
-
-    const testPlane = query.length > 0 ? query.first : undefined;
-    const testPlaneVisibility = testPlane?.get(Visibility);
 
     if (hitTestPose) {
       const hitTestPosition = new Vector3(
@@ -905,14 +829,106 @@ const ImageScanSystem = ({
       )!.innerText = `Physical Width: ${width.toFixed(3)}m`;
       document.getElementById("scanner-button")!.removeAttribute("disabled");
 
-      const testPlaneScale = testPlane?.get(Scale);
+      const view = viewerPose.views.length > 0 ? viewerPose.views[0] : undefined;
 
-      if (testPlaneScale) {
-        testPlaneScale.scale = new Vector3(width, height, 1);
+      if (
+        view &&
+        session &&
+        glRenderer.getContextAttributes().xrCompatible &&
+        shouldTakeImage
+      ) {
+        setShouldTakeImage(false);
+
+        const cam = (view as any).camera;
+
+        const gl = glRenderer.getContext();
+        const glBinding = new XRWebGLBinding(session, gl);
+        const cameraTexture: WebGLTexture = (glBinding as any).getCameraImage(cam);
+
+        const prev_framebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+        const framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(
+          gl.FRAMEBUFFER,
+          gl.COLOR_ATTACHMENT0,
+          gl.TEXTURE_2D,
+          cameraTexture,
+          0
+        );
+
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (status !== gl.FRAMEBUFFER_COMPLETE) {
+          console.error("Error creating framebuffer:", status);
+          return;
+        }
+
+        // Read the pixels from the framebuffer
+        const pixels = new Uint8Array(cam.width * cam.height * 4);
+        gl.readPixels(
+          0,
+          0,
+          cam.width,
+          cam.height,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          pixels
+        );
+        gl.deleteFramebuffer(framebuffer);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, prev_framebuffer);
+
+        // Draw the pixels to a 2D canvas
+
+        // Get the "capture-canvas"
+        const imageCanvas = document.createElement(
+          "canvas"
+        ) as HTMLCanvasElement;
+        imageCanvas.width = cam.width;
+        imageCanvas.height = cam.height;
+        const context = imageCanvas.getContext("2d");
+        const imageData = context!.createImageData(cam.width, cam.height);
+        imageData.data.set(pixels);
+        context!.putImageData(imageData, 0, 0);
+
+        // Flip image vertically
+        context!.translate(0, cam.height);
+        context!.scale(1, -1);
+        context!.drawImage(imageCanvas, 0, 0);
+
+        // Crop image proportional to the position and size of "scanner-overlay" in "scanner"
+        const scannerOverlay = document.getElementById("scanner-overlay")!;
+        const scanner = document.getElementById("scanner")!;
+        const scannerOverlayRect = scannerOverlay.getBoundingClientRect();
+        const scannerRect = scanner.getBoundingClientRect();
+        const cropWidth = cam.width * (scannerOverlayRect.width / scannerRect.width);
+        const cropHeight = cam.height * (scannerOverlayRect.height / scannerRect.height);
+        const cropX = cam.width * (scannerOverlayRect.left / scannerRect.width);
+        const cropY = cam.height * (scannerOverlayRect.top / scannerRect.height);
+        const cropCanvas = document.createElement(
+          "canvas"
+        ) as HTMLCanvasElement;
+        cropCanvas.width = cropWidth;
+        cropCanvas.height = cropHeight;
+        const cropContext = cropCanvas.getContext("2d");
+        cropContext!.drawImage(
+          imageCanvas,
+          cropX,
+          cropY,
+          cropWidth,
+          cropHeight,
+          0,
+          0,
+          cropWidth,
+          cropHeight
+        );
+
+        const dataUrl = cropCanvas.toDataURL("image/png");
+
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = "test-image.png";
+        link.click();
       }
-      if (testPlaneVisibility) {
-        testPlaneVisibility.isVisible = true;
-      }
+
     } else {
       document.getElementById("scanner-overlay")!.style.border =
         "solid 5px red";
@@ -920,10 +936,6 @@ const ImageScanSystem = ({
       document
         .getElementById("scanner-button")!
         .setAttribute("disabled", "true");
-
-      if (testPlaneVisibility) {
-        testPlaneVisibility.isVisible = false;
-      }
     }
   });
 
