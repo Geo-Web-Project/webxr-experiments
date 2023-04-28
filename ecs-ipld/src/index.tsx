@@ -26,7 +26,7 @@ const ipfsP = getIpfs({
       loadJsIpfsModule: () => IPFSCore,
       options: {
         preload: {
-          enabled: false,
+          enabled: true,
         },
       },
     }),

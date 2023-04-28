@@ -15,10 +15,11 @@ import { ThreeView } from "@react-ecs/three";
 import { Entity, Facet } from "@react-ecs/core";
 import { Vector3, Quaternion } from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ARButton, XR, useXR } from "@react-three/xr";
+import { ARButton, XR, useXR, stopSession } from "@react-three/xr";
 import { CarReader } from "@ipld/car/reader";
 import { Stats, Plane } from "@react-three/drei";
 import * as THREE from "three";
+import { base64 } from "multiformats/bases/base64";
 
 type IPLDSceneProps = {
   arPackage: World;
@@ -779,13 +780,16 @@ const ImageScanSystem = ({
   hitTestSource,
   shouldTakeImage,
   setShouldTakeImage,
+  ipfs,
+  setImageToTrack
 }: {
   refSpace: XRReferenceSpace | null;
   hitTestSource: XRHitTestSource | null;
   shouldTakeImage: boolean;
   setShouldTakeImage: (_: boolean) => void;
+  ipfs: IPFS;
+  setImageToTrack: (_: CID) => void;
 }) => {
-  const query = useQuery((e) => e.hasAll(ImageScanTestPlane));
   const { camera, gl: glRenderer } = useThree();
   const { session } = useXR();
 
@@ -923,10 +927,36 @@ const ImageScanSystem = ({
 
         const dataUrl = cropCanvas.toDataURL("image/png");
 
-        const link = document.createElement("a");
-        link.href = dataUrl;
-        link.download = "test-image.png";
-        link.click();
+        (async () => {
+          // Convert dataUrl to base64 string
+          const base64String = dataUrl.split(",")[1];
+          // Decode base64 string
+          const imageBytes = base64.decode('m' + base64String);
+
+          // Add raw block to IPFS
+          const imageCID = await ipfs.block.put(imageBytes, {
+            format: "raw",
+            mhtype: "sha2-256",
+            version: 1,
+          });
+
+          const imageToTrack = {
+            isAnchor: true,
+            trackedImage: {
+              imageAsset: imageCID,
+              physicalWidthInMeters: width,
+            }
+          }
+          console.log(imageToTrack)
+
+          // Create IPLD block from imageToTrack
+          const imageToTrackCID = await ipfs.dag.put(imageToTrack, {
+            storeCodec: "dag-json",
+            hashAlg: "sha2-256",
+          });
+
+          setImageToTrack(imageToTrackCID)
+        })()
       }
 
     } else {
@@ -1170,6 +1200,7 @@ type IPLDWorldCanvasProps = IPLDSceneProps & {
   children?: React.ReactNode;
   shouldTakeImage: boolean;
   setShouldTakeImage: (_: boolean) => void;
+  setImageToTrack: (_: CID) => void;
 };
 
 function IPLDWorldCanvas({
@@ -1182,6 +1213,7 @@ function IPLDWorldCanvas({
   children,
   shouldTakeImage,
   setShouldTakeImage,
+  setImageToTrack
 }: IPLDWorldCanvasProps) {
   const [refSpace, setRefSpace] = React.useState<XRReferenceSpace | null>(null);
   const [hitTestSource, setHitTestSource] =
@@ -1231,12 +1263,14 @@ function IPLDWorldCanvas({
       />
       <PlaneDetectionSystem refSpace={refSpace} />
       <RaycastSystem refSpace={refSpace} hitTestSource={hitTestSource} />
-      <ImageScanSystem
+      {arPackage.length === 0 ? <ImageScanSystem
         refSpace={refSpace}
+        setImageToTrack={setImageToTrack}
+        ipfs={ipfs}
         hitTestSource={hitTestSource}
         shouldTakeImage={shouldTakeImage}
         setShouldTakeImage={setShouldTakeImage}
-      />
+      /> : null}
       <ViewerPoseSystem refSpace={refSpace} />
       {arPackage.map((entityCID) => {
         return (
@@ -1305,7 +1339,7 @@ function ImageScanOverlay({
   );
 }
 
-export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
+export default function IPLDWorld({ ipfs }: IPLDSceneProps) {
   const ECS = useECS();
 
   useAnimationFrame(ECS.update);
@@ -1315,43 +1349,40 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
   >(null);
   const [showWorld, setShowWorld] = React.useState(false);
   const [shouldTakeImage, setShouldTakeImage] = React.useState(false);
+  const [imageToTrack, setImageToTrack] = React.useState<CID | null>(null);
+  const [arPackage, setARPackage] = React.useState<World>([]);
+
+  React.useEffect(() => {
+
+    (async () => {
+      if (imageToTrack) {
+        const testObject = {
+          anchor: imageToTrack,
+          glTFModel: CID.parse("QmdPXtkGThsWvR1YKg4QVSR9n8oHMPmpBEnyyV8Tk638o9")
+        }
+
+        // Add object to IPFS as dag-json
+        const testObjectCID = await ipfs.dag.put(testObject, { storeCodec: "dag-json", hashAlg: "sha2-256" })
+
+        setARPackage([testObjectCID, imageToTrack])
+        setImageToTrack(null)
+        stopSession()
+      }
+
+
+    })()
+
+  }, [imageToTrack])
 
   const overlayRef = React.useRef(document.createElement("div"));
 
-  //   React.useEffect(() => {
-  //     async function enableStream() {
-  //       try {
-  //         const stream = await navigator.mediaDevices.getUserMedia({
-  //           video: {
-  //             facingMode: "environment",
-  //             aspectRatio: window.innerHeight / window.innerWidth,
-  //           },
-  //         });
-  //         // const imageCapture = new ImageCapture(stream.getVideoTracks()[0]);
-  //
-  //         const video = document.getElementById(
-  //           "capture-video"
-  //         ) as HTMLVideoElement;
-  //
-  //         if (!video) return;
-  //
-  //         video.autoplay = true;
-  //         video.srcObject = stream;
-  //
-  //         // setImageCapture(imageCapture);
-  //       } catch (err) {
-  //         // Removed for brevity
-  //         console.error(err);
-  //       }
-  //     }
-  //
-  //     enableStream();
-  //   }, []);
-
   return (
     <ECS.Provider>
-      <div id="overlay" ref={overlayRef}>
-        {showWorld ? (
+      <div
+        id="overlay"
+        ref={overlayRef}
+      >
+        {showWorld && arPackage.length === 0 ? (
           <ImageScanOverlay setShouldTakeImage={setShouldTakeImage} />
         ) : null}
         {trackedImages ? (
@@ -1364,15 +1395,10 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
                   "anchors",
                   "dom-overlay",
                   "camera-access",
-                  "depth-sensing",
                 ],
                 optionalFeatures: ["plane-detection", "image-tracking"],
                 trackedImages: trackedImages,
                 domOverlay: { root: document.getElementById("overlay") },
-                depthSensing: {
-                  usagePreference: ["cpu-optimized"],
-                  dataFormatPreference: ["luminance-alpha"],
-                },
               } as any
             }
           />
@@ -1397,6 +1423,7 @@ export default function IPLDWorld({ arPackage, ipfs }: IPLDSceneProps) {
             setShowWorld={setShowWorld}
             shouldTakeImage={shouldTakeImage}
             setShouldTakeImage={setShouldTakeImage}
+            setImageToTrack={setImageToTrack}
           >
             {/* <Entity>
               <ImageScanTestPlane />
